@@ -4,28 +4,29 @@ import time
 
 # --- 1. 初始化硬件 ---
 motors = robot.Motors()
-display = robot.Display()
 bump_sensors = robot.BumpSensors()
 line_sensors = robot.LineSensors()
 buzzer = robot.Buzzer()
 led = robot.YellowLED()
 
-# --- 2. 参数设置 ---
-max_speed = 2000       # 循迹最大速度
-kp = 90                # PID 参数 P
-kd = 2000              # PID 参数 D
+# --- 2. LQR 控制参数 (原 PID 参数对应转换) ---
+# LQR 增益矩阵 K = [k1, k2]
+# k1: 对应原 kp，惩罚位置误差 (Q矩阵的第一项)
+# k2: 对应原 kd，惩罚速度误差 (Q矩阵的第二项)
+lqr_k1 = 90    # Position Gain
+lqr_k2 = 2000  # Velocity Gain
+
+max_speed = 2000       # 竞速最大速度
 
 # --- 3. 状态定义 ---
-MODE_STOP = 0          # 停止等待模式
-MODE_FOLLOW = 1        # 循迹模式
-MODE_LANE_KEEP = 2     # 车道保持模式
+MODE_STOP = 0          
+MODE_FOLLOW = 1        
+MODE_LANE_KEEP = 2     
 
-
-#
-DEBUG_MODE = True
 current_mode = MODE_STOP
 play_music_flag = False
 
+# Nyan Cat BGM
 nyan_cat_melody = "T140 O5 \
     f#8 g#8 d#8 d#8 b8 d8 c#8 b4 \
     b8 c#8 d8 d8 c#8 b8 c#8 d#8 \
@@ -38,144 +39,145 @@ nyan_cat_melody = "T140 O5 \
     d#8 f#8 g#8 d#8 f#8 c#8 d#8 b8 d8 d#8 d8 c#8 b8 c#8 \
     d#8 b8 c#8 d#8 f#8 c#8 d#8 c#8 b8 c#8 b4"
 
-# 全局变量
-last_p = 0
+# 全局变量：上一时刻的误差，用于观测状态 x2 (error_dot)
+last_error = 0    
 
 # --- 4. 核心功能函数 ---
-
 
 def music_thread_func():
     global play_music_flag
     while True:
         if play_music_flag:
-            # 只有当标志位为 True 时才播放
-            # play() 在 Pololu 库中通常是非阻塞的，但放入线程更安全
-            # 如果当前没有在播放，就开始播放
             if not buzzer.is_playing():
                 buzzer.play(nyan_cat_melody)
-
-            # 这里不需要 sleep 很久，只要定期检查即可
-            time.sleep_ms(100)
+            time.sleep_ms(100) 
         else:
-            # 如果标志位为 False，停止播放
             if buzzer.is_playing():
                 buzzer.off()
             time.sleep_ms(100)
 
-
 _thread.start_new_thread(music_thread_func, ())
 
-
-def line_follow_step():
-    """ PID 循迹单步逻辑 """
-    global last_p
+def lqr_follow_step():
+    """ 
+    使用状态反馈控制律 (State Feedback Control Law) u = -Kx 
+    State x = [error, error_dot]^T
+    """
+    global last_error
+    
+    # 1. 获取传感器原始数据
     line = line_sensors.read_calibrated()
-
-    # 断线保护：如果全白(<700)，根据上次位置极速转弯找线
+    
+    # 2. 状态观测 (State Observation)
+    # 计算 x1: Error (位置误差)
+    # 断线保护逻辑
     if line[1] < 700 and line[2] < 700 and line[3] < 700:
-        if last_p < 0:
-            l = 0
+        if last_error < 0:
+            position_raw = 0     
         else:
-            l = 4000
+            position_raw = 4000  
     else:
         denominator = sum(line)
-        if denominator == 0:
-            denominator = 1
-        l = (1000*line[1] + 2000*line[2] + 3000 *
-             line[3] + 4000*line[4]) // denominator
+        if denominator == 0: denominator = 1
+        position_raw = (1000*line[1] + 2000*line[2] + 3000*line[3] + 4000*line[4]) // denominator
 
-    p = l - 2000
-    d = p - last_p
-    last_p = p
+    # 构建状态向量 x
+    # x1: 位置误差 (Centering Error)
+    error = position_raw - 2000
+    
+    # x2: 误差导数 (Derivative of Error) - 也就是横向速度
+    error_dot = error - last_error
+    
+    # 更新观测器历史
+    last_error = error
+    
+    # 3. 计算最优控制量 u (Control Input)
+    # LQR Control Law: u = -K * x
+    # 注意：这里的正负号取决于电机定义的旋转方向
+    # 我们定义：u > 0 时，车辆应向右修正（左轮加速，右轮减速）
+    
+    # u = K1 * error + K2 * error_dot
+    u = (lqr_k1 * error) + (lqr_k2 * error_dot)
 
-    pid = p * kp + d * kd
-
+    # 4. 执行器混合 (Actuator Mixing)
+    # 将控制量 u 映射到左右电机
     min_speed = 0
-    left = max(min_speed, min(max_speed, int(max_speed + pid)))
-    right = max(min_speed, min(max_speed, int(max_speed - pid)))
+    
+    # 左轮 = 基准速度 + 控制量
+    left_target = int(max_speed + u)
+    # 右轮 = 基准速度 - 控制量
+    right_target = int(max_speed - u)
+    
+    # 饱和限制 (Saturation) - 防止数值溢出
+    left = max(min_speed, min(max_speed, left_target))
+    right = max(min_speed, min(max_speed, right_target))
 
     motors.set_speeds(left, right)
 
-
 def lane_keep_step():
-    """ 车道保持逻辑：撞线反弹 """
+    """ 车道保持逻辑 """
     line = line_sensors.read_calibrated()
-    turn_speed = 1500
+    turn_speed = 2000 # 竞速保持高转速
     fwd_speed = 2000
-
-    # 简单的逻辑：左边看到线往右转，右边看到线往左转
-    if line[0] > 500:  # 左压线
+    
+    if line[0] > 500: 
         motors.set_speeds(fwd_speed, -turn_speed)
-    elif line[4] > 500:  # 右压线
+    elif line[4] > 500: 
         motors.set_speeds(-turn_speed, fwd_speed)
     else:
         motors.set_speeds(fwd_speed, fwd_speed)
 
 # --- 5. 上电校准流程 ---
-
-
-# 提示：LED常亮，开始校准碰撞传感器（此时不要触碰前方）
 led.on()
 bump_sensors.calibrate()
 
-# 提示：两声短促滴滴，开始校准巡线（请左右晃动小车）
 buzzer.play("c32 c32")
 motors.set_speeds(1000, -1000)
-for i in range(25):
-    line_sensors.calibrate()
+for i in range(25): line_sensors.calibrate()
 motors.off()
 time.sleep_ms(200)
 
 motors.set_speeds(-1000, 1000)
-for i in range(50):
-    line_sensors.calibrate()
+for i in range(50): line_sensors.calibrate()
 motors.off()
 time.sleep_ms(200)
 
 motors.set_speeds(1000, -1000)
-for i in range(25):
-    line_sensors.calibrate()
+for i in range(25): line_sensors.calibrate()
 motors.off()
 
-# 校准完成：LED熄灭，播放一段音乐，进入待机
 led.off()
 display.fill(1)
-display.text("Calibration", 20, 20, 0)
-display.text("Already", 30, 40, 0)
+display.text("LQR Controller", 10, 20, 0)
+display.text("Ready", 40, 40, 0)
 display.show()
-buzzer.play(">L16 cdeg")
+buzzer.play(">L16 cdeg") 
 time.sleep_ms(1000)
 
 
-# --- 6. 主循环 (状态机) ---
+# --- 6. 主循环 ---
 
 while True:
-    # 必须不断读取传感器
     bump_sensors.read()
-
-    # ================= 状态 1: 停止等待 =================
+    
     if current_mode == MODE_STOP:
         motors.off()
         play_music_flag = False
-        # 任务 1：等待【右侧】碰撞，进入循迹
-        if bump_sensors.right_is_pressed():
-            buzzer.play("a32")
-            led.on()
-            current_mode = MODE_FOLLOW  # 切换状态
+        if bump_sensors.right_is_pressed(): 
+            buzzer.play("a32") 
+            led.on()   
+            current_mode = MODE_FOLLOW 
             play_music_flag = True
 
-    # ================= 状态 2: PID 循迹 =================
     elif current_mode == MODE_FOLLOW:
-        line_follow_step()
+            # 调用 LQR 控制函数
+            lqr_follow_step()
+            
+            if bump_sensors.left_is_pressed():
+                buzzer.play("c32 c32")
+                current_mode = MODE_LANE_KEEP 
 
-        # 任务 2：【修复】只有撞到左边，才切换到 Lane Keep
-        if bump_sensors.left_is_pressed():
-            buzzer.play("c32 c32")
-            current_mode = MODE_LANE_KEEP  # 切换状态
-
-    # ================= 状态 3: Lane Keeping =================
     elif current_mode == MODE_LANE_KEEP:
         lane_keep_step()
-
-    # 稍微延时，保持节奏
+        
     time.sleep_ms(2)
