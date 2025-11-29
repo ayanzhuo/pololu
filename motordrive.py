@@ -47,7 +47,7 @@ class ClosedLoopMotors:
         
         real_v_L = speed_L / self.COUNTS_PER_CM
         real_v_R = speed_R / self.COUNTS_PER_CM
-        self.current_v = (real_v_R + real_v_R) / 2.0
+        self.current_v = (real_v_L + real_v_R) / 2.0
         self.current_omega = (real_v_R - real_v_L) / self.TWO_L
 
         error_L = target_L - speed_L

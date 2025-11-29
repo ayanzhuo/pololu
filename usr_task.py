@@ -38,6 +38,7 @@ MODE_FOLLOW = 1
 MODE_LANE_KEEP = 2
 current_mode = MODE_STOP
 play_music_flag = False
+music_flag_lock = _thread.allocate_lock()  # 线程互斥锁
 
 # 音乐
 nyan_cat_melody = "T140 O5 f#8 g#8 d#8 d#8 b8 d8 c#8 b4" 
@@ -49,7 +50,9 @@ nyan_cat_melody = "T140 O5 f#8 g#8 d#8 d#8 b8 d8 c#8 b4"
 def music_thread_func():
     global play_music_flag
     while True:
-        if play_music_flag:
+        with music_flag_lock:
+            flag = play_music_flag
+        if flag:
             if not buzzer.is_playing(): buzzer.play(nyan_cat_melody)
             time.sleep_ms(100)
         else:
@@ -61,12 +64,16 @@ _thread.start_new_thread(music_thread_func, ())
 def calibrate_gyro():
     global gyro_offset
     total = 0
-    for i in range(100):
+    count = 0
+    for i in range(200):  # 增加循环次数确保采样充分
         if imu.gyro.data_ready():
             imu.gyro.read()
             total += imu.gyro.last_reading_dps[2]
+            count += 1
+        if count >= 100:  # 达到100个样本后停止
+            break
         time.sleep_ms(2)
-    gyro_offset = total / 100
+    gyro_offset = total / count if count > 0 else 0
 
 def lqr_follow_step():
     global last_error, current_gyro_rad
@@ -155,10 +162,12 @@ while True:
     
     if current_mode == MODE_STOP:
         driver.off()
-        play_music_flag = False
+        with music_flag_lock:
+            play_music_flag = False
         if bump_sensors.right_is_pressed():
             current_mode = MODE_FOLLOW
-            play_music_flag = True
+            with music_flag_lock:
+                play_music_flag = True
             time.sleep_ms(500)
             
     elif current_mode == MODE_FOLLOW:
