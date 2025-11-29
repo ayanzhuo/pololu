@@ -80,22 +80,12 @@ while True:
     # 64-40 = 24
     scale = 24/1023
 
+    # 清空下半屏并显示数值（便于调试）
     display.fill_rect(0, 32, 128, 32, 0)
-
-    if bump_sensors.left_is_pressed():
-        display.fill_rect(0, 64-int(bump[0]*scale), 8, int(bump[0]*scale), 1)
-    else:
-        display.rect(0, 64-int(bump[0]*scale), 8, int(bump[0]*scale), 1)
-
-    display.fill_rect(36, 64-int(line[0]*scale), 8, int(line[0]*scale), 1)
-    display.fill_rect(48, 64-int(line[1]*scale), 8, int(line[1]*scale), 1)
-    display.fill_rect(60, 64-int(line[2]*scale), 8, int(line[2]*scale), 1)
-    display.fill_rect(72, 64-int(line[3]*scale), 8, int(line[3]*scale), 1)
-    display.fill_rect(84, 64-int(line[4]*scale), 8, int(line[4]*scale), 1)
-
-    if bump_sensors.right_is_pressed():
-        display.fill_rect(120, 64-int(bump[1]*scale), 8, int(bump[1]*scale), 1)
-    else:
-        display.rect(120, 64-int(bump[1]*scale), 8, int(bump[1]*scale), 1)
-
+    # 显示碰撞传感器数值
+    display.text("Bump L:{:4d} R:{:4d}".format(bump[0], bump[1]), 0, 32, 1)
+    # 显示五个线传感器数值，分行展示
+    display.text("S0:{:4d}  S1:{:4d}".format(line[0], line[1]), 0, 42, 1)
+    display.text("S2:{:4d}  S3:{:4d}".format(line[2], line[3]), 0, 52, 1)
+    display.text("S4:{:4d}".format(line[4]), 0, 62, 1)
     display.show()
