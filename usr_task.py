@@ -130,7 +130,7 @@ def lqr_follow_step():
     driver.car_move(cmd_v, target_omega)
 
 
-def lane_keep_step():
+def lane_keep_step(): #待完善，目前为简单的车道保持
     global current_gyro_rad
 
     line = line_sensors.read_calibrated()

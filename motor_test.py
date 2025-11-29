@@ -1,82 +1,102 @@
-# This example provides an interface to test the motors and encoders.
-#
-# Holding button A or C causes the left or right motor to accelerate;
-# releasing the button causes the motor to decelerate. Tapping the button
-# while the motor is not running reverses the direction it runs.
-#
-# Encoder counts are displayed on the bottom two lines of the OLED.
-
 from pololu_3pi_2040_robot import robot
+from PID import PIDController
 import time
+import _thread
 
+# --- 常量和滤波变量 ---
+# EMA 滤波系数：0.2 滤波效果强，0.8 滤波效果弱
+ALPHA = 0.5 
+CONTROL_PERIOD_MS = 10 
+
+# 滤波后的速度变量（必须在主线程外部声明）
+filtered_left_speed = 0.0
+filtered_right_speed = 0.0
+
+# --- 硬件初始化 ---
 display = robot.Display()
-button_a = robot.ButtonA()
-button_b = robot.ButtonB()
-button_c = robot.ButtonC()
 motors = robot.Motors()
 encoders = robot.Encoders()
 
-display.text("Hold=run", 32, 0)
-display.text("Tap=flip", 32, 8)
-display.text("A", 8, 28)
-display.text("C", 112, 28)
-display.text("L: ", 24, 48)
-display.text("R: ", 24, 56)
+# --- PID 初始化和参数 ---
+target_left_speed = 2000.0
+target_right_speed = 2000.0
 
-arrows = ["v", None, "^"]
-left_dir = 1
-right_dir = 1
-left_speed = 0
-right_speed = 0
-last_update_time = 0
-button_count_a = 0
-button_count_c = 0
+# **修正后的PID参数：**
+# Kp 降到中等值，Ki 必须有，Kd 保持但依赖滤波。
+pid_left = PIDController(Kp=5.5, Ki=0.05, Kd=0.05, # Kp 降低，引入 Ki，Kd 降低且依赖滤波
+                         output_min=-10000, output_max=10000)
+pid_right = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,
+                          output_min=-10000, output_max=10000)
 
-while True:
-    # Update the LCD and motors every 50 ms.
-    if time.ticks_diff(time.ticks_ms(), last_update_time) > 50:
-        last_update_time = time.ticks_ms()
+# 共享数据结构：[Filtered_L_Speed(Counts/s), Filtered_R_Speed(Counts/s), Output_L, Output_R]
+pid_data = [0.0, 0.0, 0.0, 0.0]
 
-        if button_a.is_pressed():
-            if button_count_a < 4:
-                button_count_a += 1
-            else:
-                left_speed += 225
-        else:
-            if left_speed == 0 and 0 < button_count_a < 4:
-                left_dir = -left_dir
-            button_count_a = 0
-            left_speed -= 450
+# --- 状态记录 ---
+last_time = time.ticks_ms()
+last_left_count = 0
+last_right_count = 0
 
-        if button_c.is_pressed():
-            if button_count_c < 4:
-                button_count_c += 1
-            else:
-                right_speed += 225
-        else:
-            if right_speed == 0 and 0 < button_count_c < 4:
-                right_dir = -right_dir
-            button_count_c = 0
-            right_speed -= 450
-
-        if left_speed < 0: left_speed = 0
-        if left_speed > motors.MAX_SPEED: left_speed = motors.MAX_SPEED
-        if right_speed < 0: right_speed = 0
-        if right_speed > motors.MAX_SPEED: right_speed = motors.MAX_SPEED
-
-        motors.set_speeds(left_dir * left_speed, right_dir * right_speed)
-
-        display.fill_rect(0, 0, 8, 64, 0)
-        y = 28 + -left_dir * left_speed // 225
-        display.text(arrows[left_dir + 1], 0, y)
-
-        display.fill_rect(120, 0, 8, 64, 0)
-        y = 28 + -right_dir * right_speed // 225
-        display.text(arrows[right_dir + 1], 120, y)
-
-        display.fill_rect(40, 48, 64, 16, 0)
-        left_encoder, right_encoder = encoders.get_counts()
-        display.text(f"{left_encoder:>8}", 40, 48)
-        display.text(f"{right_encoder:>8}", 40, 56)
-
+# --- 线程函数 ---
+# ... (display_thread_function 保持不变)
+def display_thread_function():
+    while True:
+        L_speed, R_speed, L_output, R_output = pid_data
+        display.fill(0)
+        display.text(f"L:{L_speed:.0f}", 0, 0, 1)
+        display.text(f"R:{R_speed:.0f}", 0, 8, 1)
+        display.text(f"LO:{L_output:.0f}", 0, 16, 1)
+        display.text(f"RO:{R_output:.0f}", 0, 24, 1)
         display.show()
+        time.sleep_ms(100)
+
+_thread.start_new_thread(display_thread_function, ())
+
+
+# ===================== 主控制循环 =====================#
+try:
+
+    while True:
+        current_time = time.ticks_ms()
+        dt_ms = time.ticks_diff(current_time, last_time)
+
+        if dt_ms >= CONTROL_PERIOD_MS:
+            dt_s = dt_ms / 1000.0
+
+            left_count, right_count = encoders.get_counts()
+
+            # 1. 计算瞬时速度 (未滤波)
+            left_speed_current = (
+                left_count - last_left_count) / dt_s if dt_s > 0 else 0
+            right_speed_current = (
+                right_count - last_right_count) / dt_s if dt_s > 0 else 0
+
+            # 2. **应用 EMA 滤波 (核心修改)**
+            filtered_left_speed = ALPHA * left_speed_current + (1 - ALPHA) * filtered_left_speed
+            filtered_right_speed = ALPHA * right_speed_current + (1 - ALPHA) * filtered_right_speed
+
+            # 3. PID计算输出：使用滤波后的速度作为反馈
+            left_output = pid_left.compute(
+                target_left_speed, filtered_left_speed)
+            right_output = pid_right.compute(
+                target_right_speed, filtered_right_speed)
+
+            # 设置电机速度
+            motors.set_speeds(int(left_output), int(right_output))
+
+            # 更新共享数据 (注意：现在显示的是滤波后的速度)
+            pid_data[0] = filtered_left_speed
+            pid_data[1] = filtered_right_speed
+            pid_data[2] = left_output
+            pid_data[3] = right_output
+
+            # 更新记录
+            last_time = current_time
+            last_left_count = left_count
+            last_right_count = right_count
+
+        time.sleep_ms(1)
+
+except KeyboardInterrupt:
+    motors.off()
+    display.fill(0)
+    display.show()
