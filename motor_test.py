@@ -22,7 +22,6 @@ target_left_speed = 2000.0
 target_right_speed = 2000.0
 
 # **修正后的PID参数：**
-# Kp 降到中等值，Ki 必须有，Kd 保持但依赖滤波。
 pid_left = PIDController(Kp=5.5, Ki=0.05, Kd=0.05, # Kp 降低，引入 Ki，Kd 降低且依赖滤波
                          output_min=-10000, output_max=10000)
 pid_right = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,
@@ -37,7 +36,6 @@ last_left_count = 0
 last_right_count = 0
 
 # --- 线程函数 ---
-# ... (display_thread_function 保持不变)
 def display_thread_function():
     while True:
         L_speed, R_speed, L_output, R_output = pid_data
@@ -83,7 +81,6 @@ try:
             # 设置电机速度
             motors.set_speeds(int(left_output), int(right_output))
 
-            # 更新共享数据 (注意：现在显示的是滤波后的速度)
             pid_data[0] = filtered_left_speed
             pid_data[1] = filtered_right_speed
             pid_data[2] = left_output
