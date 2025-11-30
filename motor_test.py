@@ -5,8 +5,8 @@ import _thread
 
 # --- 常量和滤波变量 ---
 # EMA 滤波系数：0.2 滤波效果强，0.8 滤波效果弱
-ALPHA = 0.5 
-CONTROL_PERIOD_MS = 10 
+ALPHA = 0.5
+CONTROL_PERIOD_MS = 10
 
 # 滤波后的速度变量（必须在主线程外部声明）
 filtered_left_speed = 0.0
@@ -21,8 +21,8 @@ encoders = robot.Encoders()
 target_left_speed = 2000.0
 target_right_speed = 2000.0
 
-# **修正后的PID参数：**
-pid_left = PIDController(Kp=5.5, Ki=0.05, Kd=0.05, # Kp 降低，引入 Ki，Kd 降低且依赖滤波
+
+pid_left = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,
                          output_min=-10000, output_max=10000)
 pid_right = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,
                           output_min=-10000, output_max=10000)
@@ -36,6 +36,8 @@ last_left_count = 0
 last_right_count = 0
 
 # --- 线程函数 ---
+
+
 def display_thread_function():
     while True:
         L_speed, R_speed, L_output, R_output = pid_data
@@ -46,6 +48,7 @@ def display_thread_function():
         display.text(f"RO:{R_output:.0f}", 0, 24, 1)
         display.show()
         time.sleep_ms(100)
+
 
 _thread.start_new_thread(display_thread_function, ())
 
@@ -69,13 +72,15 @@ try:
                 right_count - last_right_count) / dt_s if dt_s > 0 else 0
 
             # 2. **应用 EMA 滤波 (核心修改)**
-            filtered_left_speed = ALPHA * left_speed_current + (1 - ALPHA) * filtered_left_speed
-            filtered_right_speed = ALPHA * right_speed_current + (1 - ALPHA) * filtered_right_speed
+            filtered_left_speed = ALPHA * left_speed_current + \
+                (1 - ALPHA) * filtered_left_speed
+            filtered_right_speed = ALPHA * right_speed_current + \
+                (1 - ALPHA) * filtered_right_speed
 
             # 3. PID计算输出：使用滤波后的速度作为反馈
-            left_output = pid_left.compute(
+            left_output = pid_left.calculate(
                 target_left_speed, filtered_left_speed)
-            right_output = pid_right.compute(
+            right_output = pid_right.calculate(
                 target_right_speed, filtered_right_speed)
 
             # 设置电机速度

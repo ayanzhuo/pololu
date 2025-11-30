@@ -1,114 +1,181 @@
 import time
-from pololu_3pi_2040_robot import Robot
-from bsp.PID import PIDController
+import math
+import _thread
+from pololu_3pi_2040_robot import robot
+from PID import PIDController 
 
+# --- EMA 滤波系数：0.2 强, 0.8 弱 ---
+ALPHA = 0.5
+CONTROL_PERIOD_MS = 10
 
-class RobotMotor:
+class MotorController:
     """
-    封装 Pololu 3pi+ 2040 Robot 单个电机的速度控制逻辑。
+    封装了 3pi+ 2040 机器人左右轮的 EMA 滤波和 PID 速度控制逻辑。
     """
-    def __init__(self, robot_instance: Robot, motor_side: str, encoder_counts_per_rev: int = 2700):
-            
-            self.robot = robot_instance
-            self.side = motor_side.lower()
-            
-            # Pololu 电机速度范围通常是 -1200 到 1200
-            OUTPUT_MIN = -1200
-            OUTPUT_MAX = 1200
-            
-            # 初始 PID 参数 (需要根据实际调参)
-            Kp = 0.6
-            Ki = 0.05
-            Kd = 0.01
-            
-            # *** 实例化 PID 控制器 ***
-            self.pid = PIDController(Kp, Ki, Kd, OUTPUT_MIN, OUTPUT_MAX)
-            
-            self.target_speed_rpm = 0.0
-            self.encoder_counts_per_rev = encoder_counts_per_rev
-            self.last_counts = self._get_current_counts()
-            self.last_time = time.monotonic()
-
-
-    def _get_current_counts(self):
-        """
-        获取当前编码器计数值。
-        这部分是您已有的 Pololu 库接口。
-        """
-        if self.side == "left":
-            # 假设 Pololu 库提供了一个获取编码器计数值的方法
-            return self.robot.encoders.get_counts_left()
-        elif self.side == "right":
-            return self.robot.encoders.get_counts_right()
-        else:
-            return 0
-
-    def _calculate_current_speed_rpm(self):
-        """
-        计算当前电机的实际速度 (RPM)。
-        """
-        current_counts = self._get_current_counts()
-        current_time = time.monotonic()
+    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05):
+        # --- 硬件接口 ---
+        self.motors = robot.Motors()
+        self.encoders = robot.Encoders()
         
-        delta_counts = current_counts - self.last_counts
-        delta_time = current_time - self.last_time
         
-        self.last_counts = current_counts
+        self.target_left_speed = 0.0
+        self.target_right_speed = 0.0
+
+        # --- PID 初始化和参数 ---
+        output_limit = 10000
+        self.pid_left = PIDController(
+            Kp=Kp, Ki=Ki, Kd=Kd, output_min=-output_limit, output_max=output_limit
+        )
+        self.pid_right = PIDController(
+            Kp=Kp, Ki=Ki, Kd=Kd, output_min=-output_limit, output_max=output_limit
+        )
+
+        # --- 状态和滤波变量 ---
+        self.filtered_left_speed = 0.0
+        self.filtered_right_speed = 0.0
+        self.left_output = 0.0
+        self.right_output = 0.0
+        
+        # --- 时间和计数记录 ---
+        self.last_time = time.ticks_ms()
+        self.last_left_count = 0
+        self.last_right_count = 0
+
+    def set_target_speeds(self, target_L, target_R):
+        """设置新的目标速度 (counts/s)。"""
+        self.target_left_speed = float(target_L)
+        self.target_right_speed = float(target_R)
+
+    def update_and_get_dt(self):
+
+        current_time = time.ticks_ms()
+        dt_ms = time.ticks_diff(current_time, self.last_time)
+
+        if dt_ms < CONTROL_PERIOD_MS:
+            return None 
+        
+        dt_s = dt_ms / 1000.0
+        
+        left_count, right_count = self.encoders.get_counts()
+
+        left_speed_current = (left_count - self.last_left_count) / dt_s if dt_s > 0 else 0
+        right_speed_current = (right_count - self.last_right_count) / dt_s if dt_s > 0 else 0
+
+
+        self.filtered_left_speed = ALPHA * left_speed_current + (1 - ALPHA) * self.filtered_left_speed
+        self.filtered_right_speed = ALPHA * right_speed_current + (1 - ALPHA) * self.filtered_right_speed
+
+
+        self.left_output = self.pid_left.calculate(
+            self.target_left_speed, self.filtered_left_speed
+        )
+        self.right_output = self.pid_right.calculate(
+            self.target_right_speed, self.filtered_right_speed
+        )
+
+        # 5. 设置电机速度
+        self.motors.set_speeds(int(self.left_output), int(self.right_output))
+        
+        # 6. 更新记录
         self.last_time = current_time
+        self.last_left_count = left_count
+        self.last_right_count = right_count
         
-        if delta_time == 0:
-            return 0.0
+        return dt_s 
 
-        # 将计数值转换为 RPM
-        # (计数值 / 每转计数值) = 转数
-        # (转数 / delta_time_秒) = RPS (转/秒)
-        # RPS * 60 = RPM (转/分钟)
-        revolutions = delta_counts / self.encoder_counts_per_rev
-        rps = revolutions / delta_time
-        rpm = rps * 60.0
-        
-        return rpm
+    def get_status(self):
+        """返回当前的控制状态 (滤波速度, PID 输出)。"""
+        return (
+            self.filtered_left_speed, 
+            self.filtered_right_speed, 
+            self.left_output, 
+            self.right_output
+        )
+    
+    def motors_off(self):
+        """关闭电机。"""
+        self.motors.off()
 
-    def set_speed_rpm(self, target_rpm: float):
-        """
-        设置电机的目标速度 (RPM)。
-        """
-        self.target_speed_rpm = target_rpm
-        print(f"{self.side.capitalize()} 电机目标速度设置为: {target_rpm:.2f} RPM")
+# --- 封装显示线程  ---
 
-    def update_control_loop(self):
-        """
-        控制循环的核心。在主程序中需要定时调用此方法。
-        """
-        # 1. 获取当前速度反馈
-        current_speed_rpm = self._calculate_current_speed_rpm()
-        
-        # 2. 计算 PID 控制输出 (PWM 占空比值)
-        control_output = self.pid.compute(self.target_speed_rpm, current_speed_rpm)
-        
-        # 3. 应用控制输出到 Pololu 电机驱动
-        self._apply_motor_output(int(control_output))
-        
-        return current_speed_rpm, control_output
+class RobotDisplay:
+    def __init__(self, drive_instance):
+        self.display = robot.Display()
+        self.drive = drive_instance
 
-    def _apply_motor_output(self, output: int):
-        """
-        将计算出的控制输出发送给 Pololu 电机驱动。
-        """
-        left_speed = self.robot.motors.get_speeds()[0] if self.side == "right" else output
-        right_speed = self.robot.motors.get_speeds()[1] if self.side == "left" else output
-        
-        # Pololu 3pi+ 2040 Robot 通过 set_speeds 方法同时设置两个电机的速度
-        self.robot.motors.set_speeds(left_speed, right_speed)
+    def run(self):
+        while True:
+            L_speed, R_speed, L_output, R_output = self.drive.get_status()
+            self.display.fill(0)
+            self.display.text(f"L:{L_speed:.0f}", 0, 0, 1)
+            self.display.text(f"R:{R_speed:.0f}", 0, 8, 1)
+            self.display.text(f"LO:{L_output:.0f}", 0, 16, 1)
+            self.display.text(f"RO:{R_output:.0f}", 0, 24, 1)
+            self.display.show()
+            time.sleep_ms(100)
 
-def stop(self):
-        """
-        停止电机。
-        """
-        self.set_speed_rpm(0.0)
-        self.update_control_loop() # 立即执行一次，确保速度设置为 0
+
+#===================== 运动学解算 =====================#
+class RobotDrive:
+    # --- 机器人物理参数 (运动学常量) ---
+    WHEEL_RADIUS_MM = 16.0  
+    WHEEL_SEPARATION_MM = 88.0
+    ENCODER_CPR = 360.0 # Counts Per Revolution
+    
+
+    COUNTS_PER_MM = ENCODER_CPR / (2.0 * math.pi * WHEEL_RADIUS_MM)
+
+    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05):
+        self.controller = MotorController(Kp=Kp, Ki=Ki, Kd=Kd)
+        self.current_v = 0.0  # 机器人中心线速度 (mm/s)
+        self.current_w = 0.0 # 机器人角速度 (rad/s)
         
-        # *** 调用 PID.py 中的 reset 方法 ***
-        self.pid.reset()
+
+    def set_speed(self, v, w):
+
+        # 1. 计算左右轮所需的线速度 (mm/s)
+        v_L = v - w * (self.WHEEL_SEPARATION_MM / 2.0)
+        v_R = v + w * (self.WHEEL_SEPARATION_MM / 2.0)
+
+        # 2. 转换为 Counts/s
+        target_L_counts_s = v_L * self.COUNTS_PER_MM
+        target_R_counts_s = v_R * self.COUNTS_PER_MM
+
+        # 3. 将目标传递给底层的 MotorController
+        self.controller.set_target_speeds(target_L_counts_s, target_R_counts_s)
+
+    # ----------------------------------------------------
+    # 核心更新：集成 PID 和 里程计
+    # ----------------------------------------------------
+    def update(self):
+
+        dt_s = self.controller.update_and_get_dt() 
         
-        print(f"{self.side.capitalize()} 电机已停止。")
+        if dt_s is None:
+            return False 
+
+        filtered_L_counts_s, filtered_R_counts_s, _, _ = self.controller.get_status()
+
+
+        MM_PER_COUNT_S = 1.0 / self.COUNTS_PER_MM 
+        v_L_actual = filtered_L_counts_s * MM_PER_COUNT_S
+        v_R_actual = filtered_R_counts_s * MM_PER_COUNT_S
+        
+
+        v_actual = (v_R_actual + v_L_actual) / 2.0
+        w_actual = (v_R_actual - v_L_actual) / self.WHEEL_SEPARATION_MM
+        
+        self.current_v = v_actual
+        self.current_w = w_actual
+
+        return True
+
+
+    def motors_off(self):
+        """关闭电机。"""
+        self.controller.motors_off()
+
+    def get_current_velocity(self): 
+        """返回当前机器人的实际中心线速度 (v, mm/s) 和角速度 (w, rad/s)。"""
+        return self.current_v, self.current_w
+    

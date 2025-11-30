@@ -21,7 +21,7 @@ class PIDController:
         
         self.last_output = 0.0
 
-    def compute(self, setpoint, measured_value):
+    def calculate(self, setpoint, measured_value):
         """
         计算 PID 输出。
         """
