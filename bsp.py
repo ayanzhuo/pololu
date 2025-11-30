@@ -96,28 +96,31 @@ class MotorController:
         """关闭电机。"""
         self.motors.off()
 
-# --- 封装显示线程  ---
+#===================== 屏幕 =====================#
 
 class RobotDisplay:
     def __init__(self, drive_instance):
         self.display = robot.Display()
-        self.drive = drive_instance
+        self.status_message = "INIT" 
+
+    def set_custom_message(self, message): 
+        self.status_message = message
 
     def run(self):
         while True:
-            L_speed, R_speed, L_output, R_output = self.drive.get_status()
+           
             self.display.fill(0)
-            self.display.text(f"L:{L_speed:.0f}", 0, 0, 1)
-            self.display.text(f"R:{R_speed:.0f}", 0, 8, 1)
-            self.display.text(f"LO:{L_output:.0f}", 0, 16, 1)
-            self.display.text(f"RO:{R_output:.0f}", 0, 24, 1)
+            
+            # 优先显示自定义消息
+            self.display.text(self.status_message, 0, 0, 1) # 显示自定义状态
+                         
             self.display.show()
             time.sleep_ms(100)
 
 
 #===================== 运动学解算 =====================#
 class RobotDrive:
-    # --- 机器人物理参数 (运动学常量) ---
+
     WHEEL_RADIUS_MM = 16.0  
     WHEEL_SEPARATION_MM = 88.0
     ENCODER_CPR = 360.0 # Counts Per Revolution
@@ -127,26 +130,21 @@ class RobotDrive:
 
     def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05):
         self.controller = MotorController(Kp=Kp, Ki=Ki, Kd=Kd)
-        self.current_v = 0.0  # 机器人中心线速度 (mm/s)
-        self.current_w = 0.0 # 机器人角速度 (rad/s)
+        self.current_v = 0.0 
+        self.current_w = 0.0 
         
 
     def set_speed(self, v, w):
 
-        # 1. 计算左右轮所需的线速度 (mm/s)
         v_L = v - w * (self.WHEEL_SEPARATION_MM / 2.0)
         v_R = v + w * (self.WHEEL_SEPARATION_MM / 2.0)
 
-        # 2. 转换为 Counts/s
         target_L_counts_s = v_L * self.COUNTS_PER_MM
         target_R_counts_s = v_R * self.COUNTS_PER_MM
 
-        # 3. 将目标传递给底层的 MotorController
         self.controller.set_target_speeds(target_L_counts_s, target_R_counts_s)
 
-    # ----------------------------------------------------
-    # 核心更新：集成 PID 和 里程计
-    # ----------------------------------------------------
+
     def update(self):
 
         dt_s = self.controller.update_and_get_dt() 
