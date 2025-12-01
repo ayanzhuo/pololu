@@ -31,6 +31,7 @@ DRIVE_KD = 0.05
 
 # 2. 循线控制参数 
 LINE_BASE_SPEED = 600.0   # 基础前进速度 (mm/s)
+LINE_BASE_KEEP_SPEED = 400.0   # 基础保持速度 (mm/s)
 LINE_MAX_OMEGA = 20.0     # 最大转向角速度 (rad/s)
 STEER_KP_LOW = 0.006      # 循线 KP 低增益
 STEER_KP_HIGH = 0.03      # 循线 KP 高增益
@@ -38,6 +39,7 @@ STEER_KP_HIGH = 0.03      # 循线 KP 高增益
 # 3. IMU 陀螺仪转弯参数 
 GYRO_TURN_KP = 140.0      # 陀螺仪转弯 P 增益
 GYRO_TURN_KD = 4.0        # 陀螺仪转弯 D 增益
+
 GYRO_MAX_SPEED = 3000     # 陀螺仪转弯最大电机速度
 TURN_ANGLE_DEG = -90.0    # 特殊转弯角度 (度)
 
@@ -46,7 +48,8 @@ TURN_ANGLE_DEG = -90.0    # 特殊转弯角度 (度)
 robot_drive = RobotDrive(Kp=DRIVE_KP, Ki=DRIVE_KI, Kd=DRIVE_KD)
 line_follower = LineFollower(
     robot_drive, 
-    LINE_BASE_SPEED, 
+    LINE_BASE_SPEED,
+    LINE_BASE_KEEP_SPEED, 
     LINE_MAX_OMEGA, 
     STEER_KP_LOW, 
     STEER_KP_HIGH, 
