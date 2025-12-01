@@ -12,7 +12,7 @@ class MotorController:
     """
     封装了 3pi+ 2040 机器人左右轮的 EMA 滤波和 PID 速度控制逻辑。
     """
-    def __init__(self, Kp=6, Ki=0.035, Kd=0.025):
+    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05):
         # --- 硬件接口 ---
         self.motors = robot.Motors()
         self.encoders = robot.Encoders()
@@ -102,20 +102,22 @@ class RobotDisplay:
     def __init__(self, drive_instance):
         self.display = robot.Display()
         self.status_message = "INIT" 
-
+        self.last_update = 0
     def set_custom_message(self, message): 
         self.status_message = message
-
+    # def update(self):
+    #     now = time.ticks_ms()
+    #     if time.ticks_diff(now, self.last_update) > 100:
+    #         self.display.fill(0)
+    #         self.display.text(self.status_message, 0, 0, 1) 
+    #         self.display.show()
+    #         self.last_update = now
     def run(self):
         while True:
-           
             self.display.fill(0)
-            
-            # 优先显示自定义消息
-            self.display.text(self.status_message, 0, 0, 1) # 显示自定义状态
-                         
+            self.display.text(self.status_message, 0, 0, 1) 
             self.display.show()
-            time.sleep_ms(100)
+            time.sleep_ms(100) 
 
 
 #===================== 运动学解算 =====================#

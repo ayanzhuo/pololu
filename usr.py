@@ -28,46 +28,82 @@ MODE_LANE_KEEP = 4
 mode_lock = _thread.allocate_lock()
 current_mode_ref = [MODE_WAIT_CALIB]
 
-# 音乐数据 (频率Hz, 持续时间ms)
-MUSIC_NOTES = [(523, 100), (659, 100), (784, 150), (0, 50)]
+music_index = 0
+note_start_time = 0
+music_is_playing = False
+song_finished_time = 0
+
+
+#======================阴间音乐==========================
+MUSIC_NOTES = [
+    (330, 350), # E4 
+    (330, 350), # E4 
+    (330, 700), # E4 (长)
+    (0, 100),   # 休息
+    
+    (330, 350), # E4 
+    (330, 350), # E4 
+    (330, 700), # E4 (长)
+    (0, 100),   # 休息
+    
+    (392, 350), # G4 (高)
+    (262, 350), # C4 (低)
+    (294, 350), # D4 (中)
+    (330, 1000),# E4 (结束，非常长)
+    (0, 500)    # 循环间休息
+]
 
 # --- 实例化控制系统 ---
 robot_drive = RobotDrive()
 line_follower = LineFollower(robot_drive)
 display_manager = RobotDisplay(robot_drive)
 
+_thread.start_new_thread(display_manager.run, ()) 
 # ==========================================
 
 
-# def music_thread_function():
+def music_step():
 
-#     while True:
-#         play_music = False
+    global music_index, note_start_time, music_is_playing, song_finished_time
 
-#         with mode_lock:
-#             if current_mode_ref[0] == MODE_FOLLOW:
-#                 play_music = True
+    current_mode = current_mode_ref[0]
 
-#         # if play_music:
-#         #     for freq, duration in MUSIC_NOTES:
-#         #         if freq > 0:
-#         #             buzzer.frequency(freq)
-#         #             buzzer.on()
-#         #         else:
-#         #             buzzer.off()
+    if current_mode == MODE_FOLLOW:
+        if not music_is_playing and time.ticks_diff(time.ticks_ms(), song_finished_time) > 500:
+            music_is_playing = True
+            music_index = 0
+            note_start_time = time.ticks_ms()
 
-#                 # time.sleep_ms(duration)
+    else:
+        buzzer.off()
+        music_is_playing = False
+        return
 
-#             buzzer.off()
-#             time.sleep_ms(500)
-#         else:
-#             buzzer.off()
-#             time.sleep_ms(100)
+    if music_is_playing:
+        now = time.ticks_ms()
+        if music_index < len(MUSIC_NOTES):
+            freq, duration = MUSIC_NOTES[music_index]
 
-# ==========================================
-bump_sensors.calibrate()
-_thread.start_new_thread(display_manager.run, ())
-# _thread.start_new_thread(music_thread_function, ())
+            if time.ticks_diff(now, note_start_time) < duration:
+                if freq > 0:
+                    if buzzer.pwm.freq() != freq:
+                        buzzer.pwm.freq(freq)
+                        buzzer.on()
+                elif freq == 0:
+                    buzzer.off()
+                    buzzer.on()
+                elif freq == 0:
+                    buzzer.off()
+            else:
+                music_index += 1
+                note_start_time = now
+
+        else:
+            buzzer.off()
+            music_is_playing = False
+            song_finished_time = now
+
+
 time.sleep_ms(200)
 
 # ===================== 主控制循环 =====================#
@@ -76,11 +112,14 @@ try:
     while True:
         line_follower.update_angle()
         robot_drive.update()
+
+        # 陀螺仪转弯步进
         if line_follower.gyro_turn_step():
-            time.sleep_ms(2) 
+            time.sleep_ms(2)
             continue
 
         bump_sensors.read()
+
         with mode_lock:
             current_mode = current_mode_ref[0]
 
@@ -105,15 +144,16 @@ try:
             if button_a.check():
                 with mode_lock:
                     current_mode_ref[0] = MODE_LANE_KEEP
-                    time.sleep_ms(200)
+                time.sleep_ms(200)
 
         elif current_mode == MODE_LANE_KEEP:
             display_manager.set_custom_message("Lane Keep")
             line_follower.lane_keep()
+
             if button_a.check():
                 with mode_lock:
                     current_mode_ref[0] = MODE_STOP
-                    time.sleep_ms(200)
+                time.sleep_ms(200)
 
         elif current_mode == MODE_STOP:
             display_manager.set_custom_message("Ready to Go!")
@@ -123,7 +163,9 @@ try:
                     current_mode_ref[0] = MODE_FOLLOW
                 time.sleep_ms(200)
 
-        time.sleep_ms(2)
+        # === 辅助逻辑 (低频) ===
+        music_step()     
+        time.sleep_ms(2)  # 保持主循环调度间隔
 
 except KeyboardInterrupt:
     robot_drive.motors_off()
