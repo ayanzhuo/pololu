@@ -4,13 +4,12 @@ import math
 from pololu_3pi_2040_robot import robot
 
 
-from bsp import RobotDrive, RobotDisplay
+from bsp import RobotDrive, RobotDisplay, MusicPlayer
 from application import LineFollower
 
 # ==========================================
 # --- 硬件和常量初始化 ---
 # ==========================================
-bump_sensors = robot.BumpSensors()
 button_a = robot.ButtonA()
 button_b = robot.ButtonB()
 buzzer = robot.Buzzer()
@@ -23,102 +22,20 @@ MODE_CALIBRATING = 1
 MODE_FOLLOW = 2
 MODE_STOP = 3
 MODE_LANE_KEEP = 4
-
-
-mode_lock = _thread.allocate_lock()
 current_mode_ref = [MODE_WAIT_CALIB]
-
-music_index = 0
-note_start_time = 0
-music_is_playing = False
-song_finished_time = 0
-
-
-# ======================阴间音乐==========================
-MUSIC_NOTES = [
-    (330, 350),  # E4
-    (330, 350),  # E4
-    (330, 700),  # E4 (长)
-    (0, 100),   # 休息
-
-    (330, 350),  # E4
-    (330, 350),  # E4
-    (330, 700),  # E4 (长)
-    (0, 100),   # 休息
-
-    (392, 350),  # G4 (高)
-    (262, 350),  # C4 (低)
-    (294, 350),  # D4 (中)
-    (330, 1000),  # E4 (结束，非常长)
-    (0, 500)    # 循环间休息
-]
-
-# --- 实例化控制系统 ---
-robot_drive = RobotDrive()
+# ======================参数调优=====================#
+KP_TUNE = 5.5
+KI_TUNE = 0.05
+KD_TUNE = 0.05
+# ===================== 实例化控制系统 =====================#
+robot_drive = RobotDrive(Kp=KP_TUNE, Ki=KI_TUNE, Kd=KD_TUNE)
 line_follower = LineFollower(robot_drive)
 display_manager = RobotDisplay(robot_drive)
-bump_sensors.calibrate()
+mode_lock = _thread.allocate_lock()
+music_player = MusicPlayer(buzzer, mode_lock, current_mode_ref)
 
 _thread.start_new_thread(display_manager.run, ())
-# ==========================================
-
-
-def music_step():
-
-    global music_index, note_start_time, music_is_playing, song_finished_time
-    global current_mode_ref, mode_lock
-
-    with mode_lock:
-        current_mode = current_mode_ref[0]
-
-    if current_mode == MODE_FOLLOW:
-        if not music_is_playing and time.ticks_diff(time.ticks_ms(), song_finished_time) > 500:
-            music_is_playing = True
-            music_index = 0
-            note_start_time = time.ticks_ms()
-
-    else:
-        buzzer.off()
-        music_is_playing = False
-        return
-
-    if music_is_playing:
-        now = time.ticks_ms()
-        if music_index < len(MUSIC_NOTES):
-            freq, duration = MUSIC_NOTES[music_index]
-
-            if time.ticks_diff(now, note_start_time) < duration:
-                if freq > 0:
-                    if buzzer.pwm.freq() != freq:
-                        buzzer.pwm.freq(freq)
-                        buzzer.on()
-
-                elif freq == 0:
-                    buzzer.off()
-            else:
-                music_index += 1
-                note_start_time = now
-
-        else:
-            buzzer.off()
-            music_is_playing = False
-            song_finished_time = now
-
-
-def wait_for_collision_release():
-
-    bump_sensors.read() 
-    is_pressed = bump_sensors.left_is_pressed() or bump_sensors.right_is_pressed()
-    while is_pressed:
-        bump_sensors.read() 
-        is_pressed = bump_sensors.left_is_pressed() or bump_sensors.right_is_pressed()
-        time.sleep_ms(10) 
-
-    time.sleep_ms(20) 
-
 time.sleep_ms(200)
-
-
 # ===================== 主控制循环 =====================#
 
 try:
@@ -127,8 +44,9 @@ try:
         line_follower.update_angle()
         robot_drive.update()
 
-        bump_sensors.read()
-        collision_detected = bump_sensors.left_is_pressed() or bump_sensors.right_is_pressed()
+        line_follower.bump_sensors.read()
+        collision_detected = line_follower.bump_sensors.left_is_pressed(
+        ) or line_follower.bump_sensors.right_is_pressed()
 
         if line_follower.gyro_turn_step():
             time.sleep_ms(2)
@@ -143,7 +61,7 @@ try:
             if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_CALIBRATING
-                wait_for_collision_release()
+                line_follower.wait_for_collision_release()
 
         elif current_mode == MODE_CALIBRATING:
             display_manager.set_custom_message("CALIBRATING...")
@@ -158,7 +76,7 @@ try:
             if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_LANE_KEEP
-                wait_for_collision_release()
+                line_follower.wait_for_collision_release()
 
         elif current_mode == MODE_LANE_KEEP:
             display_manager.set_custom_message("Lane Keep")
@@ -167,7 +85,7 @@ try:
             if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_STOP
-                wait_for_collision_release()
+                line_follower.wait_for_collision_release()
 
         elif current_mode == MODE_STOP:
             display_manager.set_custom_message("Ready to Go!")
@@ -175,11 +93,10 @@ try:
             if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_FOLLOW
-                wait_for_collision_release()
+                line_follower.wait_for_collision_release()
 
-        # === 辅助逻辑 (低频) ===
-        music_step()
-        time.sleep_ms(2)  # 保持主循环调度间隔
+        music_player.music_step()
+        time.sleep_ms(2)
 
 except KeyboardInterrupt:
     robot_drive.motors_off()

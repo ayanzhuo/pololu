@@ -179,3 +179,65 @@ class RobotDrive:
         """返回当前机器人的实际中心线速度 (v, mm/s) 和角速度 (w, rad/s)。"""
         return self.current_v, self.current_w
     
+#===================== 音乐播放 =====================#
+class MusicPlayer:
+    """
+    非阻塞音乐播放器，驱动 Buzzer 硬件，并通过锁访问当前机器人模式。
+    """
+    # 音乐数据 (必须保留在这里，因为它定义了播放内容)
+    MUSIC_NOTES = [
+        (330, 350), (330, 350), (330, 700), (0, 100),   
+        (330, 350), (330, 350), (330, 700), (0, 100),   
+        (392, 350), (262, 350), (294, 350), (330, 1000),
+        (0, 500)    
+    ]
+    
+    def __init__(self, buzzer_instance, mode_lock_instance, mode_ref_instance):
+        self.buzzer = buzzer_instance
+        self.mode_lock = mode_lock_instance
+        self.current_mode_ref = mode_ref_instance
+        
+        self.music_index = 0
+        self.note_start_time = 0
+        self.music_is_playing = False
+        self.song_finished_time = 0
+
+    def music_step(self):
+        # 模式常量 (从 usr.py 结构推断，MODE_FOLLOW = 2)
+        MODE_FOLLOW = 2 
+        
+        # 线程安全地读取模式
+        with self.mode_lock:
+            current_mode = self.current_mode_ref[0]
+
+        if current_mode == MODE_FOLLOW:
+            if not self.music_is_playing and time.ticks_diff(time.ticks_ms(), self.song_finished_time) > 500:
+                self.music_is_playing = True
+                self.music_index = 0
+                self.note_start_time = time.ticks_ms()
+
+        else:
+            self.buzzer.off()
+            self.music_is_playing = False
+            return
+
+        if self.music_is_playing:
+            now = time.ticks_ms()
+            if self.music_index < len(self.MUSIC_NOTES):
+                freq, duration = self.MUSIC_NOTES[self.music_index]
+
+                if time.ticks_diff(now, self.note_start_time) < duration:
+                    if freq > 0:
+                        if self.buzzer.pwm.freq() != freq:
+                            self.buzzer.pwm.freq(freq)
+                            self.buzzer.on()
+                    elif freq == 0:
+                        self.buzzer.off()
+                else:
+                    self.music_index += 1
+                    self.note_start_time = now
+
+            else:
+                self.buzzer.off()
+                self.music_is_playing = False
+                self.song_finished_time = now
