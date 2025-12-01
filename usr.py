@@ -16,10 +16,6 @@ button_b = robot.ButtonB()
 buzzer = robot.Buzzer()
 led = robot.YellowLED()
 
-# PID参数
-Kp_TUNE = 2.5
-Ki_TUNE = 0.01
-Kd_TUNE = 0.0
 
 # --- 状态机 ---
 MODE_WAIT_CALIB = 0
@@ -36,7 +32,7 @@ current_mode_ref = [MODE_WAIT_CALIB]
 MUSIC_NOTES = [(523, 100), (659, 100), (784, 150), (0, 50)]
 
 # --- 实例化控制系统 ---
-robot_drive = RobotDrive(Kp=Kp_TUNE, Ki=Ki_TUNE, Kd=Kd_TUNE)
+robot_drive = RobotDrive()
 line_follower = LineFollower(robot_drive)
 display_manager = RobotDisplay(robot_drive)
 
@@ -69,7 +65,7 @@ display_manager = RobotDisplay(robot_drive)
 #             time.sleep_ms(100)
 
 # ==========================================
-
+bump_sensors.calibrate()
 
 _thread.start_new_thread(display_manager.run, ())
 # _thread.start_new_thread(music_thread_function, ())
@@ -104,21 +100,26 @@ try:
             display_manager.set_custom_message("Following Line")
             line_follower.follow_line()
 
-            if bump_sensors.left_is_pressed():
+            if button_a.check():
                 with mode_lock:
                     current_mode_ref[0] = MODE_LANE_KEEP
+                    time.sleep_ms(200)
 
         elif current_mode == MODE_LANE_KEEP:
-            # lane_keep_step()
-            pass
+            display_manager.set_custom_message("Lane Keep")
+            line_follower.lane_keep()
+            if button_a.check():
+                with mode_lock:
+                    current_mode_ref[0] = MODE_STOP
+                    time.sleep_ms(200)
 
         elif current_mode == MODE_STOP:
-            display_manager.set_custom_message("Ready!")
+            display_manager.set_custom_message("Ready to Go!")
+            robot_drive.set_speed(v=0, w=0)
             if button_a.check():
                 with mode_lock:
                     current_mode_ref[0] = MODE_FOLLOW
                 time.sleep_ms(200)
-
 
         time.sleep_ms(2)
 

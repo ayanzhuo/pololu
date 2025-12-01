@@ -12,7 +12,7 @@ class MotorController:
     """
     封装了 3pi+ 2040 机器人左右轮的 EMA 滤波和 PID 速度控制逻辑。
     """
-    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05):
+    def __init__(self, Kp=7.5, Ki=0.05, Kd=0.05):
         # --- 硬件接口 ---
         self.motors = robot.Motors()
         self.encoders = robot.Encoders()
