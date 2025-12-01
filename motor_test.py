@@ -65,25 +65,21 @@ try:
 
             left_count, right_count = encoders.get_counts()
 
-            # 1. 计算瞬时速度 (未滤波)
             left_speed_current = (
                 left_count - last_left_count) / dt_s if dt_s > 0 else 0
             right_speed_current = (
                 right_count - last_right_count) / dt_s if dt_s > 0 else 0
 
-            # 2. **应用 EMA 滤波 (核心修改)**
             filtered_left_speed = ALPHA * left_speed_current + \
                 (1 - ALPHA) * filtered_left_speed
             filtered_right_speed = ALPHA * right_speed_current + \
                 (1 - ALPHA) * filtered_right_speed
 
-            # 3. PID计算输出：使用滤波后的速度作为反馈
             left_output = pid_left.calculate(
                 target_left_speed, filtered_left_speed)
             right_output = pid_right.calculate(
                 target_right_speed, filtered_right_speed)
 
-            # 设置电机速度
             motors.set_speeds(int(left_output), int(right_output))
 
             pid_data[0] = filtered_left_speed
@@ -91,7 +87,6 @@ try:
             pid_data[2] = left_output
             pid_data[3] = right_output
 
-            # 更新记录
             last_time = current_time
             last_left_count = left_count
             last_right_count = right_count

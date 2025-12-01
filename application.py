@@ -12,17 +12,17 @@ class LineFollower:
     """
     
     # --- 循迹常量 ---
-    BASE_SPEED_MM_S = 400.0   # 基础前进速度 (v)
-    MAX_STEER_OMEGA = 20.0     # 最大转向角速度 (w, rad/s)
+    BASE_SPEED_MM_S = 800.0   # 基础前进速度 (v)
+    MAX_STEER_OMEGA = 30.0     # 最大转向角速度 (w, rad/s)
 
     #  校准扫动参数
-    CAL_SWEEP_V = 300.0       # 前进基础速度 (mm/s)
-    CAL_SWEEP_W = 15.0        # 快速转动角速度 (rad/s)
-    CAL_SWEEP_DURATION = 1500  # 扫描持续时间 (毫秒)
+    CAL_SWEEP_V = 0.0       # 前进基础速度 (mm/s)
+    CAL_SWEEP_W = 5.0        # 快速转动角速度 (rad/s)
+    CAL_SWEEP_DURATION = 800  # 扫描持续时间 (毫秒)
     CAL_LOOP_DELAY = 20       # 校准循环延迟 (毫秒)
     #  控制参数
-    STEERING_KP_BASE = 0.006 
-    STEERING_KP_HIGH = 0.015   
+    STEERING_KP_BASE = 0.12   #直线抖动较小，可以微调
+    STEERING_KP_HIGH = 0.2 
     ERROR_THRESHOLD = 1000    
     SENSOR_WEIGHTS = [-2000, -1000, 0, 1000, 2000] 
     
@@ -32,8 +32,6 @@ class LineFollower:
         self.line_sensors = robot.LineSensors()
         self.sensor_count = len(self.line_sensors.read_calibrated())
 
-        # 校准传感器（通常在启动时进行）
-        self.line_sensors.calibrate()
         
     def _calculate_error(self):
 
