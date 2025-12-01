@@ -34,22 +34,22 @@ music_is_playing = False
 song_finished_time = 0
 
 
-#======================阴间音乐==========================
+# ======================阴间音乐==========================
 MUSIC_NOTES = [
-    (330, 350), # E4 
-    (330, 350), # E4 
-    (330, 700), # E4 (长)
+    (330, 350),  # E4
+    (330, 350),  # E4
+    (330, 700),  # E4 (长)
     (0, 100),   # 休息
-    
-    (330, 350), # E4 
-    (330, 350), # E4 
-    (330, 700), # E4 (长)
+
+    (330, 350),  # E4
+    (330, 350),  # E4
+    (330, 700),  # E4 (长)
     (0, 100),   # 休息
-    
-    (392, 350), # G4 (高)
-    (262, 350), # C4 (低)
-    (294, 350), # D4 (中)
-    (330, 1000),# E4 (结束，非常长)
+
+    (392, 350),  # G4 (高)
+    (262, 350),  # C4 (低)
+    (294, 350),  # D4 (中)
+    (330, 1000),  # E4 (结束，非常长)
     (0, 500)    # 循环间休息
 ]
 
@@ -57,8 +57,9 @@ MUSIC_NOTES = [
 robot_drive = RobotDrive()
 line_follower = LineFollower(robot_drive)
 display_manager = RobotDisplay(robot_drive)
+bump_sensors.calibrate()
 
-_thread.start_new_thread(display_manager.run, ()) 
+_thread.start_new_thread(display_manager.run, ())
 # ==========================================
 
 
@@ -68,7 +69,7 @@ def music_step():
     global current_mode_ref, mode_lock
 
     with mode_lock:
-      current_mode = current_mode_ref[0]
+        current_mode = current_mode_ref[0]
 
     if current_mode == MODE_FOLLOW:
         if not music_is_playing and time.ticks_diff(time.ticks_ms(), song_finished_time) > 500:
@@ -104,28 +105,34 @@ def music_step():
             song_finished_time = now
 
 
+def wait_for_collision_release():
+
+    bump_sensors.read() 
+    is_pressed = bump_sensors.left_is_pressed() or bump_sensors.right_is_pressed()
+    while is_pressed:
+        bump_sensors.read() 
+        is_pressed = bump_sensors.left_is_pressed() or bump_sensors.right_is_pressed()
+        time.sleep_ms(10) 
+
+    time.sleep_ms(20) 
+
 time.sleep_ms(200)
 
-def wait_for_collision_release():
-    while bump_sensors.left_is_pressed or bump_sensors.right_is_pressed:
-        bump_sensors.read()
-        time.sleep_ms(10)
-    time.sleep_ms(20) # 额外的去抖动
 
 # ===================== 主控制循环 =====================#
 
 try:
+
     while True:
         line_follower.update_angle()
         robot_drive.update()
 
-        # 陀螺仪转弯步进
+        bump_sensors.read()
+        collision_detected = bump_sensors.left_is_pressed() or bump_sensors.right_is_pressed()
+
         if line_follower.gyro_turn_step():
             time.sleep_ms(2)
             continue
-
-        bump_sensors.read()
-        collision_detected = bump_sensors.left_is_pressed or bump_sensors.right_is_pressed
 
         with mode_lock:
             current_mode = current_mode_ref[0]
@@ -171,7 +178,7 @@ try:
                 wait_for_collision_release()
 
         # === 辅助逻辑 (低频) ===
-        music_step()     
+        music_step()
         time.sleep_ms(2)  # 保持主循环调度间隔
 
 except KeyboardInterrupt:
