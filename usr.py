@@ -2,8 +2,6 @@ import time
 import _thread
 import math
 from pololu_3pi_2040_robot import robot
-
-
 from bsp import RobotDrive, RobotDisplay, MusicPlayer
 from application import LineFollower
 
@@ -12,32 +10,57 @@ from application import LineFollower
 # ==========================================
 button_a = robot.ButtonA()
 button_b = robot.ButtonB()
+button_c = robot.ButtonC()
 buzzer = robot.Buzzer()
 led = robot.YellowLED()
 
-
-# --- 状态机 ---
+# ===================状态机 =====================
 MODE_WAIT_CALIB = 0
 MODE_CALIBRATING = 1
 MODE_FOLLOW = 2
 MODE_STOP = 3
 MODE_LANE_KEEP = 4
-current_mode_ref = [MODE_WAIT_CALIB]
-# ======================参数调优=====================#
-KP_TUNE = 5.5
-KI_TUNE = 0.05
-KD_TUNE = 0.05
-# ===================== 实例化控制系统 =====================#
-robot_drive = RobotDrive(Kp=KP_TUNE, Ki=KI_TUNE, Kd=KD_TUNE)
-line_follower = LineFollower(robot_drive)
-display_manager = RobotDisplay(robot_drive)
 mode_lock = _thread.allocate_lock()
-music_player = MusicPlayer(buzzer, mode_lock, current_mode_ref)
+current_mode_ref = [MODE_WAIT_CALIB]
 
+# ======================参数调优=====================#
+# 1. 驱动控制参数 
+DRIVE_KP = 5.5
+DRIVE_KI = 0.05
+DRIVE_KD = 0.05
+
+# 2. 循线控制参数 
+LINE_BASE_SPEED = 600.0   # 基础前进速度 (mm/s)
+LINE_MAX_OMEGA = 20.0     # 最大转向角速度 (rad/s)
+STEER_KP_LOW = 0.006      # 循线 KP 低增益
+STEER_KP_HIGH = 0.03      # 循线 KP 高增益
+
+# 3. IMU 陀螺仪转弯参数 
+GYRO_TURN_KP = 140.0      # 陀螺仪转弯 P 增益
+GYRO_TURN_KD = 4.0        # 陀螺仪转弯 D 增益
+GYRO_MAX_SPEED = 3000     # 陀螺仪转弯最大电机速度
+TURN_ANGLE_DEG = -90.0    # 特殊转弯角度 (度)
+
+# ===================== 实例化控制系统 =====================#
+
+robot_drive = RobotDrive(Kp=DRIVE_KP, Ki=DRIVE_KI, Kd=DRIVE_KD)
+line_follower = LineFollower(
+    robot_drive, 
+    LINE_BASE_SPEED, 
+    LINE_MAX_OMEGA, 
+    STEER_KP_LOW, 
+    STEER_KP_HIGH, 
+    GYRO_TURN_KP, 
+    GYRO_TURN_KD, 
+    GYRO_MAX_SPEED, 
+    TURN_ANGLE_DEG
+)
+display_manager = RobotDisplay(robot_drive)
+music_player = MusicPlayer(buzzer, mode_lock, current_mode_ref)
 _thread.start_new_thread(display_manager.run, ())
 time.sleep_ms(200)
-# ===================== 主控制循环 =====================#
 
+# ===================== 主控制循环 =====================#
 try:
 
     while True:

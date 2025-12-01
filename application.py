@@ -36,7 +36,8 @@ class LineFollower:
     # === 新增 IMU 硬件和状态 ===
 
 
-    def __init__(self, drive_controller):
+    def __init__(self, drive_controller, base_speed, max_omega, kp_low, kp_high,
+             gyro_kp, gyro_kd, gyro_max_speed, turn_angle):
 
         self.drive = drive_controller
         self.line_sensors = robot.LineSensors()
@@ -51,8 +52,17 @@ class LineFollower:
         self.last_time_gyro_reading = None  # 上次读取 IMU 的时间戳 (us)
         self.turn_rate = 0.0                # 当前转弯角速度 (度/秒)
         self.is_turning = False             # 标志是否正在执行陀螺仪转弯
-
         self.special_action_counter = 0
+        #==========================================
+        self.BASE_SPEED_MM_S = base_speed
+        self.MAX_STEER_OMEGA = max_omega
+        self.STEERING_KP_BASE = kp_low
+        self.STEERING_KP_HIGH = kp_high
+        
+        self.GYRO_KP = gyro_kp
+        self.GYRO_KD = gyro_kd
+        self.MAX_TURN_SPEED = gyro_max_speed
+        self.SPECIAL_TURN_ANGLE = turn_angle
 
     def _calculate_error(self):
 
@@ -237,7 +247,7 @@ class LineFollower:
             return 0.0, self.FIXED_TURN_W
         
         if self._speacial_black() and self.special_action_counter == 0: 
-            counter += 1
+            self.special_action_counter += 1
             self.start_gyro_turn(self.SPECIAL_TURN_ANGLE) 
             return 0.0, 0.0
         
