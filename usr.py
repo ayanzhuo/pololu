@@ -67,7 +67,8 @@ def music_step():
     global music_index, note_start_time, music_is_playing, song_finished_time
     global current_mode_ref, mode_lock
 
-    current_mode = current_mode_ref[0]
+    with mode_lock:
+      current_mode = current_mode_ref[0]
 
     if current_mode == MODE_FOLLOW:
         if not music_is_playing and time.ticks_diff(time.ticks_ms(), song_finished_time) > 500:
@@ -105,6 +106,12 @@ def music_step():
 
 time.sleep_ms(200)
 
+def wait_for_collision_release():
+    while bump_sensors.left_is_pressed or bump_sensors.right_is_pressed:
+        bump_sensors.read()
+        time.sleep_ms(10)
+    time.sleep_ms(20) # 额外的去抖动
+
 # ===================== 主控制循环 =====================#
 
 try:
@@ -118,6 +125,7 @@ try:
             continue
 
         bump_sensors.read()
+        collision_detected = bump_sensors.left_is_pressed or bump_sensors.right_is_pressed
 
         with mode_lock:
             current_mode = current_mode_ref[0]
@@ -125,10 +133,10 @@ try:
         if current_mode == MODE_WAIT_CALIB:
             robot_drive.set_speed(v=0, w=0)
             display_manager.set_custom_message("Press A to CALIB")
-            if button_a.check():
+            if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_CALIBRATING
-                time.sleep_ms(200)
+                wait_for_collision_release()
 
         elif current_mode == MODE_CALIBRATING:
             display_manager.set_custom_message("CALIBRATING...")
@@ -140,27 +148,27 @@ try:
             display_manager.set_custom_message("Following Line")
             line_follower.follow_line()
 
-            if button_a.check():
+            if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_LANE_KEEP
-                time.sleep_ms(200)
+                wait_for_collision_release()
 
         elif current_mode == MODE_LANE_KEEP:
             display_manager.set_custom_message("Lane Keep")
             line_follower.lane_keep()
 
-            if button_a.check():
+            if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_STOP
-                time.sleep_ms(200)
+                wait_for_collision_release()
 
         elif current_mode == MODE_STOP:
             display_manager.set_custom_message("Ready to Go!")
             robot_drive.set_speed(v=0, w=0)
-            if button_a.check():
+            if collision_detected:
                 with mode_lock:
                     current_mode_ref[0] = MODE_FOLLOW
-                time.sleep_ms(200)
+                wait_for_collision_release()
 
         # === 辅助逻辑 (低频) ===
         music_step()     
