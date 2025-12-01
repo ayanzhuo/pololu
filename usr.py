@@ -65,6 +65,7 @@ _thread.start_new_thread(display_manager.run, ())
 def music_step():
 
     global music_index, note_start_time, music_is_playing, song_finished_time
+    global current_mode_ref, mode_lock
 
     current_mode = current_mode_ref[0]
 
@@ -89,9 +90,7 @@ def music_step():
                     if buzzer.pwm.freq() != freq:
                         buzzer.pwm.freq(freq)
                         buzzer.on()
-                elif freq == 0:
-                    buzzer.off()
-                    buzzer.on()
+
                 elif freq == 0:
                     buzzer.off()
             else:

@@ -50,6 +50,8 @@ class LineFollower:
         self.turn_rate = 0.0                # 当前转弯角速度 (度/秒)
         self.is_turning = False             # 标志是否正在执行陀螺仪转弯
 
+        self.special_action_counter = 0
+
     def _calculate_error(self):
 
         readings = self.line_sensors.read_calibrated()
@@ -212,7 +214,6 @@ class LineFollower:
     SPECIAL_TURN_W = 4.0  # 特殊情况的左转角速度
 
     def lane_keep(self):
-        counter = 0
         # 1. 如果正在执行陀螺仪转弯，直接跳过所有循线逻辑
         if self.is_turning:
             # 返回 0, 0 让主循环知道当前正在执行特殊动作
@@ -224,7 +225,7 @@ class LineFollower:
 
             return 0.0, self.FIXED_TURN_W
         
-        if self._speacial_black() and counter == 0: 
+        if self._speacial_black() and self.special_action_counter == 0: 
             counter += 1
             self.start_gyro_turn(self.SPECIAL_TURN_ANGLE) 
             return 0.0, 0.0
