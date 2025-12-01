@@ -25,12 +25,30 @@ class LineFollower:
 
     ERROR_THRESHOLD = 1000
     SENSOR_WEIGHTS = [-2000, -1000, 0, 1000, 2000]
+    
+    # --- 新增 IMU/转弯常量 ---
+    GYRO_KP = 140.0         # 比例增益 (P)
+    GYRO_KD = 4.0           # 微分增益 (D)
+    MAX_TURN_SPEED = 3000   # 最大转弯速度 (counts/s)
+    ANGLE_TOLERANCE = 3.0   # 停止转弯的角度容忍度 (度)
+    SPECIAL_TURN_ANGLE = -90.0 # 目标左转 90 度 (终点左转)
+
+    # === 新增 IMU 硬件和状态 ===
+
 
     def __init__(self, drive_controller):
 
         self.drive = drive_controller
         self.line_sensors = robot.LineSensors()
         self.sensor_count = len(self.line_sensors.read_calibrated())
+        self.imu = robot.IMU()
+        self.imu.enable_default() # 启用 IMU
+        
+        self.robot_angle = 0.0              # 当前机器人角度 (度)
+        self.target_angle = 0.0             # 目标角度 (度)
+        self.last_time_gyro_reading = None  # 上次读取 IMU 的时间戳 (us)
+        self.turn_rate = 0.0                # 当前转弯角速度 (度/秒)
+        self.is_turning = False             # 标志是否正在执行陀螺仪转弯
 
     def _calculate_error(self):
 
@@ -106,7 +124,62 @@ class LineFollower:
             time.sleep_ms(10)
 
         self.drive.motors_off()
+    def update_angle(self):
+        """从陀螺仪读取数据，并积分计算机器人的当前角度 (Yaw)。"""
+        if self.imu.gyro.data_ready():
+            self.imu.gyro.read()
+            self.turn_rate = self.imu.gyro.last_reading_dps[2] 
+            
+            now = time.ticks_us()
+            
+            if self.last_time_gyro_reading:
+                dt = time.ticks_diff(now, self.last_time_gyro_reading)
+                self.robot_angle += self.turn_rate * dt / 1000000
+                
+            self.last_time_gyro_reading = now
 
+    def start_gyro_turn(self, angle_to_add):
+        """设置目标角度并启动陀螺仪转弯模式。"""
+        # 重置角度追踪，从当前朝向开始计算
+        self.robot_angle = 0.0 
+        self.last_time_gyro_reading = None 
+        
+        self.target_angle = angle_to_add 
+        self.is_turning = True
+        
+    def gyro_turn_step(self):
+        """执行一个周期的 PD 转向控制。返回 True 表示转弯仍在进行中。"""
+        if not self.is_turning:
+            return False
+
+        angle_error = self.target_angle - self.robot_angle
+        
+        # 检查是否接近目标角度 (停止条件)
+        if abs(angle_error) < self.ANGLE_TOLERANCE:
+            self.is_turning = False
+            # 停止电机，因为我们不再需要 PID/PD 控制
+            self.drive.motors_off() 
+            return False # 转弯完成
+
+        # PD 控制计算转速
+        turn_speed = angle_error * self.GYRO_KP - self.turn_rate * self.GYRO_KD
+        
+        # 钳位速度
+        if turn_speed > self.MAX_TURN_SPEED:
+            turn_speed = self.MAX_TURN_SPEED
+        elif turn_speed < -self.MAX_TURN_SPEED:
+            turn_speed = -self.MAX_TURN_SPEED
+            
+        # 应用电机速度 (注意：这里需要调用 RobotDrive 底层 set_speeds 来精确控制左右轮)
+        # 假设你的 RobotDrive 内部有一个 motors 对象 (robot.Motors)
+        self.drive.controller.motors.set_speeds(int(-turn_speed), int(turn_speed))
+        
+        # 注意：这里我们依赖主循环中对 robot_drive.update() 的调用来执行速度闭环。
+        # 如果你的 motors.set_speeds 是直接的 PWM 设置，则不需要 robot_drive.update()，
+        # 但如果 motors.set_speeds 是目标速度，则需要。
+        # 鉴于示例代码直接控制 motors，我们在这里依赖它立即生效。
+        
+        return True # 转弯进行中
 # ==========================================
     def _speacial_black(self):
         readings = self.line_sensors.read_calibrated()
@@ -140,26 +213,21 @@ class LineFollower:
 
     def lane_keep(self):
         counter = 0
+        # 1. 如果正在执行陀螺仪转弯，直接跳过所有循线逻辑
+        if self.is_turning:
+            # 返回 0, 0 让主循环知道当前正在执行特殊动作
+            return 0.0, 0.0
+        
         if self._is_all_black():
 
             self.drive.set_speed(v=0.0, w=self.FIXED_TURN_W)
 
             return 0.0, self.FIXED_TURN_W
         
-        if self._speacial_black() and counter == 0:
+        if self._speacial_black() and counter == 0: 
             counter += 1
- 
-            self.drive.set_speed(v=0.0, w=self.SPECIAL_TURN_W)
-
-            start_time = time.ticks_ms()
-            while time.ticks_diff(time.ticks_ms(), start_time) < 500:
-                self.drive.update()  # 关键：确保电机 PID 在转弯期间持续更新
-                time.sleep_ms(5)     # 短暂等待，避免 CPU 占用过高
-            # ===============================
-
-            self.drive.set_speed(v=0.0, w=0.0)
-            
-            return 0.0, self.SPECIAL_TURN_W
+            self.start_gyro_turn(self.SPECIAL_TURN_ANGLE) 
+            return 0.0, 0.0
         
         if self._is_on_green_marker():
             self.drive.set_speed(v=0.0, w=self.FIXED_TURN_W)
@@ -173,11 +241,9 @@ class LineFollower:
         # 使用分段 KP
         if abs_error > self.ERROR_THRESHOLD:
             steering_kp = self.STEERING_KP_HIGH
-
-        # 修正转向：error > 0 (偏右) 需要 w < 0 (左转)
+            
         steering_omega = steering_kp * (-error)
 
-        # 钳位，限制最大转向角速度
         if steering_omega > self.MAX_STEER_OMEGA:
             steering_omega = self.MAX_STEER_OMEGA
         elif steering_omega < -self.MAX_STEER_OMEGA:

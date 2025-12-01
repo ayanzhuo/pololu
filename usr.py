@@ -66,7 +66,6 @@ display_manager = RobotDisplay(robot_drive)
 
 # ==========================================
 bump_sensors.calibrate()
-
 _thread.start_new_thread(display_manager.run, ())
 # _thread.start_new_thread(music_thread_function, ())
 time.sleep_ms(200)
@@ -75,10 +74,13 @@ time.sleep_ms(200)
 
 try:
     while True:
+        line_follower.update_angle()
         robot_drive.update()
-        bump_sensors.read()
-        t = time.ticks_ms()
+        if line_follower.gyro_turn_step():
+            time.sleep_ms(2) 
+            continue
 
+        bump_sensors.read()
         with mode_lock:
             current_mode = current_mode_ref[0]
 
