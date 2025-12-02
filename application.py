@@ -16,8 +16,8 @@ class LineFollower:
 
     #  校准扫动参数
     CAL_SWEEP_V = 0.0       # 前进基础速度 (mm/s)
-    CAL_SWEEP_W = 8.0        # 快速转动角速度 (rad/s)
-    CAL_SWEEP_DURATION = 500  # 扫描持续时间 (毫秒)
+    CAL_SWEEP_W = 6.0        # 快速转动角速度 (rad/s)
+    CAL_SWEEP_DURATION = 350  # 扫描持续时间 (毫秒)
     CAL_LOOP_DELAY = 20       # 校准循环延迟 (毫秒)
     #  控制参数
     STEERING_KP_BASE = 0.008

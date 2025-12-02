@@ -3,7 +3,7 @@ import _thread
 import math
 from pololu_3pi_2040_robot import robot
 
-from bsp import RobotDrive, RobotDisplay
+from bsp import RobotDrive, RobotDisplay, MusicPlayer
 from application import LineFollower
 
 # ==========================================
@@ -30,7 +30,9 @@ robot_drive = RobotDrive()
 line_follower = LineFollower(robot_drive)
 display_manager = RobotDisplay(robot_drive)
 # ===================== 传感器校准 =====================#
+
 bump_sensors.calibrate()
+music_player = MusicPlayer(buzzer, mode_lock, current_mode_ref)
 _thread.start_new_thread(display_manager.run, ())
 time.sleep_ms(200)
 
@@ -83,7 +85,7 @@ try:
                 with mode_lock:
                     current_mode_ref[0] = MODE_FOLLOW
                 time.sleep_ms(200)
-
+        music_player.music_step()
         time.sleep_ms(2)
 
 except KeyboardInterrupt:
