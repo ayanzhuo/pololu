@@ -29,9 +29,9 @@ current_mode_ref = [MODE_WAIT_CALIB]
 
 # ======================参数调优=====================#
 # 1. 驱动控制参数 
-DRIVE_KP = 5.5
-DRIVE_KI = 0.05
-DRIVE_KD = 0.05
+DRIVE_KP = 6.5    #5.5 0.15 0.15 0.0
+DRIVE_KI = 0.01
+DRIVE_KD = 0.005
 DRIVE_KF = 1.0
 # 2. 循线控制参数 
 LINE_BASE_SPEED = 600.0   # 基础前进速度 (mm/s)

@@ -22,9 +22,9 @@ target_left_speed = 2000.0
 target_right_speed = 2000.0
 
 
-pid_left = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,
+pid_left = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,Kf=1.0,
                          output_min=-10000, output_max=10000)
-pid_right = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,
+pid_right = PIDController(Kp=5.5, Ki=0.05, Kd=0.05,Kf=1.0,
                           output_min=-10000, output_max=10000)
 
 # 共享数据结构：[Filtered_L_Speed(Counts/s), Filtered_R_Speed(Counts/s), Output_L, Output_R]
@@ -79,6 +79,11 @@ try:
                 target_left_speed, filtered_left_speed)
             right_output = pid_right.calculate(
                 target_right_speed, filtered_right_speed)
+            # 添加前馈控制
+            feedforward_L = 1.0 * target_left_speed
+            feedforward_R = 1.0 * target_right_speed
+            left_output += feedforward_L
+            right_output += feedforward_R
 
             motors.set_speeds(int(left_output), int(right_output))
 
