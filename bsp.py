@@ -12,7 +12,7 @@ class MotorController:
     """
     封装了 3pi+ 2040 机器人左右轮的 EMA 滤波和 PID 速度控制逻辑。
     """
-    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05):
+    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05, Kf=0.0):
         # --- 硬件接口 ---
         self.motors = robot.Motors()
         self.encoders = robot.Encoders()
@@ -24,10 +24,10 @@ class MotorController:
         # --- PID 初始化和参数 ---
         output_limit = 10000
         self.pid_left = PIDController(
-            Kp=Kp, Ki=Ki, Kd=Kd, output_min=-output_limit, output_max=output_limit
+            Kp=Kp, Ki=Ki, Kd=Kd,Kf=Kf, output_min=-output_limit, output_max=output_limit
         )
         self.pid_right = PIDController(
-            Kp=Kp, Ki=Ki, Kd=Kd, output_min=-output_limit, output_max=output_limit
+            Kp=Kp, Ki=Ki, Kd=Kd, Kf=Kf, output_min=-output_limit, output_max=output_limit
         )
 
         # --- 状态和滤波变量 ---
@@ -72,9 +72,15 @@ class MotorController:
         self.right_output = self.pid_right.calculate(
             self.target_right_speed, self.filtered_right_speed
         )
+        # 添加前馈控制
+        
+        feedforward_L = self.Kf * self.target_left_speed
+        feedforward_R = self.Kf * self.target_right_speed   
 
-        # 5. 设置电机速度
-        self.motors.set_speeds(int(self.left_output), int(self.right_output))
+        final_output_L = self.left_output + feedforward_L
+        final_output_R = self.right_output + feedforward_R
+
+        self.motors.set_speeds(int(final_output_L), int(final_output_R))
         
         # 6. 更新记录
         self.last_time = current_time

@@ -12,7 +12,11 @@ button_a = robot.ButtonA()
 button_b = robot.ButtonB()
 button_c = robot.ButtonC()
 buzzer = robot.Buzzer()
-led = robot.YellowLED()
+rgb_leds = robot.RGBLEDs()
+
+rgb_leds.set_brightness(21) 
+for i in range(6):
+    rgb_leds.set(i, [0,129,226])
 
 # ===================状态机 =====================
 MODE_WAIT_CALIB = 0
@@ -28,7 +32,7 @@ current_mode_ref = [MODE_WAIT_CALIB]
 DRIVE_KP = 5.5
 DRIVE_KI = 0.05
 DRIVE_KD = 0.05
-
+DRIVE_KF = 1.0
 # 2. 循线控制参数 
 LINE_BASE_SPEED = 600.0   # 基础前进速度 (mm/s)
 LINE_BASE_KEEP_SPEED = 400.0   # 基础保持速度 (mm/s)
@@ -45,7 +49,7 @@ TURN_ANGLE_DEG = -90.0    # 特殊转弯角度 (度)
 
 # ===================== 实例化控制系统 =====================#
 
-robot_drive = RobotDrive(Kp=DRIVE_KP, Ki=DRIVE_KI, Kd=DRIVE_KD)
+robot_drive = RobotDrive(Kp=DRIVE_KP, Ki=DRIVE_KI, Kd=DRIVE_KD, Kf=DRIVE_KF)
 line_follower = LineFollower(
     robot_drive, 
     LINE_BASE_SPEED,
@@ -61,12 +65,14 @@ line_follower = LineFollower(
 display_manager = RobotDisplay(robot_drive)
 music_player = MusicPlayer(buzzer, mode_lock, current_mode_ref)
 _thread.start_new_thread(display_manager.run, ())
+
 time.sleep_ms(200)
 
 # ===================== 主控制循环 =====================#
 try:
 
     while True:
+
         line_follower.update_angle()
         robot_drive.update()
 
@@ -108,10 +114,10 @@ try:
             display_manager.set_custom_message("Lane Keep")
             line_follower.lane_keep()
 
-            if collision_detected:
-                with mode_lock:
-                    current_mode_ref[0] = MODE_STOP
-                line_follower.wait_for_collision_release()
+            # if collision_detected:
+            #     with mode_lock:
+            #         current_mode_ref[0] = MODE_STOP
+            #     line_follower.wait_for_collision_release()
 
         elif current_mode == MODE_STOP:
             display_manager.set_custom_message("Ready to Go!")
