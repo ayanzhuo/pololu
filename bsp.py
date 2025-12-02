@@ -12,7 +12,7 @@ class MotorController:
     """
     封装了 3pi+ 2040 机器人左右轮的 EMA 滤波和 PID 速度控制逻辑。
     """
-    def __init__(self, Kp=5.5, Ki=0.05, Kd=0.05, Kf=0.5):
+    def __init__(self, Kp=.5, Ki=0.05, Kd=0.05):
         # --- 硬件接口 ---
         self.motors = robot.Motors()
         self.encoders = robot.Encoders()
@@ -22,7 +22,6 @@ class MotorController:
         self.target_right_speed = 0.0
 
         # --- PID 初始化和参数 ---
-        # self.Kf = Kf
         output_limit = 10000
         self.pid_left = PIDController(
             Kp=Kp, Ki=Ki, Kd=Kd, output_min=-output_limit, output_max=output_limit
@@ -73,14 +72,8 @@ class MotorController:
         self.right_output = self.pid_right.calculate(
             self.target_right_speed, self.filtered_right_speed
         )
-            # # 添加前馈控制
-            
-            # feedforward_L = self.Kf * self.target_left_speed
-            # feedforward_R = self.Kf * self.target_right_speed   
 
-            # final_output_L = self.left_output + feedforward_L
-            # final_output_R = self.right_output + feedforward_R
-
+        # 5. 设置电机速度
         self.motors.set_speeds(int(self.left_output), int(self.right_output))
         
         # 6. 更新记录
@@ -109,22 +102,20 @@ class RobotDisplay:
     def __init__(self, drive_instance):
         self.display = robot.Display()
         self.status_message = "INIT" 
-        self.last_update = 0
+
     def set_custom_message(self, message): 
         self.status_message = message
-    # def update(self):
-    #     now = time.ticks_ms()
-    #     if time.ticks_diff(now, self.last_update) > 100:
-    #         self.display.fill(0)
-    #         self.display.text(self.status_message, 0, 0, 1) 
-    #         self.display.show()
-    #         self.last_update = now
+
     def run(self):
         while True:
+           
             self.display.fill(0)
-            self.display.text(self.status_message, 0, 0, 1) 
+            
+            # 优先显示自定义消息
+            self.display.text(self.status_message, 0, 0, 1) # 显示自定义状态
+                         
             self.display.show()
-            time.sleep_ms(100) 
+            time.sleep_ms(100)
 
 
 #===================== 运动学解算 =====================#
@@ -186,65 +177,3 @@ class RobotDrive:
         """返回当前机器人的实际中心线速度 (v, mm/s) 和角速度 (w, rad/s)。"""
         return self.current_v, self.current_w
     
-#===================== 音乐播放 =====================#
-class MusicPlayer:
-    """
-    非阻塞音乐播放器，驱动 Buzzer 硬件，并通过锁访问当前机器人模式。
-    """
-    # 音乐数据 (必须保留在这里，因为它定义了播放内容)
-    MUSIC_NOTES = [
-        (330, 350), (330, 350), (330, 700), (0, 100),   
-        (330, 350), (330, 350), (330, 700), (0, 100),   
-        (392, 350), (262, 350), (294, 350), (330, 1000),
-        (0, 500)    
-    ]
-    
-    def __init__(self, buzzer_instance, mode_lock_instance, mode_ref_instance):
-        self.buzzer = buzzer_instance
-        self.mode_lock = mode_lock_instance
-        self.current_mode_ref = mode_ref_instance
-        
-        self.music_index = 0
-        self.note_start_time = 0
-        self.music_is_playing = False
-        self.song_finished_time = 0
-
-    def music_step(self):
-        # 模式常量 (从 usr.py 结构推断，MODE_FOLLOW = 2)
-        MODE_FOLLOW = 2 
-        
-        # 线程安全地读取模式
-        with self.mode_lock:
-            current_mode = self.current_mode_ref[0]
-
-        if current_mode == MODE_FOLLOW:
-            if not self.music_is_playing and time.ticks_diff(time.ticks_ms(), self.song_finished_time) > 500:
-                self.music_is_playing = True
-                self.music_index = 0
-                self.note_start_time = time.ticks_ms()
-
-        else:
-            self.buzzer.off()
-            self.music_is_playing = False
-            return
-
-        if self.music_is_playing:
-            now = time.ticks_ms()
-            if self.music_index < len(self.MUSIC_NOTES):
-                freq, duration = self.MUSIC_NOTES[self.music_index]
-
-                if time.ticks_diff(now, self.note_start_time) < duration:
-                    if freq > 0:
-                        if self.buzzer.pwm.freq() != freq:
-                            self.buzzer.pwm.freq(freq)
-                            self.buzzer.on()
-                    elif freq == 0:
-                        self.buzzer.off()
-                else:
-                    self.music_index += 1
-                    self.note_start_time = now
-
-            else:
-                self.buzzer.off()
-                self.music_is_playing = False
-                self.song_finished_time = now
