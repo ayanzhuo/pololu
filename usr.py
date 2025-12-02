@@ -41,6 +41,7 @@ STEER_KP_LOW = 0.006      # 循线 KP 低增益
 STEER_KP_HIGH = 0.03      # 循线 KP 高增益
 
 # 3. IMU 陀螺仪转弯参数 
+STEERING_KDAMP = 0.02     # 转向阻尼系数
 GYRO_TURN_KP = 140.0      # 陀螺仪转弯 P 增益
 GYRO_TURN_KD = 4.0        # 陀螺仪转弯 D 增益
 
@@ -57,6 +58,7 @@ line_follower = LineFollower(
     LINE_MAX_OMEGA, 
     STEER_KP_LOW, 
     STEER_KP_HIGH, 
+    STEERING_KDAMP,
     GYRO_TURN_KP, 
     GYRO_TURN_KD, 
     GYRO_MAX_SPEED, 

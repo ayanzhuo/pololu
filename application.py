@@ -37,7 +37,7 @@ class LineFollower:
     # === 新增 IMU 硬件和状态 ===
 
 
-    def __init__(self, drive_controller, base_speed, base_keep_speed, max_omega, kp_low, kp_high,
+    def __init__(self, drive_controller, base_speed, base_keep_speed, max_omega, kp_low, kp_high,steer_kdamp,
              gyro_kp, gyro_kd, gyro_max_speed, turn_angle):
 
         self.drive = drive_controller
@@ -60,7 +60,7 @@ class LineFollower:
         self.MAX_STEER_OMEGA = max_omega
         self.STEERING_KP_BASE = kp_low
         self.STEERING_KP_HIGH = kp_high
-        
+        self.STEERING_KDAMP = steer_kdamp
         self.GYRO_KP = gyro_kp
         self.GYRO_KD = gyro_kd
         self.MAX_TURN_SPEED = gyro_max_speed
@@ -104,7 +104,8 @@ class LineFollower:
         if abs_error > self.ERROR_THRESHOLD:
             steering_kp = self.STEERING_KP_HIGH
 
-        steering_omega = steering_kp * error
+        damping_term = self.STEERING_KDAMP * self.turn_rate
+        steering_omega = (steering_kp * (-error)) - damping_term
 
         if steering_omega > self.MAX_STEER_OMEGA:
             steering_omega = self.MAX_STEER_OMEGA
