@@ -12,7 +12,6 @@ class LineFollower:
 
     # --- 循迹常量 ---
     BASE_SPEED_MM_S = 600.0   # 基础前进速度 (v)
-    BASE_KEEP_SPEED_MM_S = 400.0   # 基础保持速度 (v)
     MAX_STEER_OMEGA = 25.0     # 最大转向角速度 (w, rad/s)
 
     #  校准扫动参数
@@ -37,7 +36,7 @@ class LineFollower:
     # === 新增 IMU 硬件和状态 ===
 
 
-    def __init__(self, drive_controller, base_speed, base_keep_speed, max_omega, kp_low, kp_high,steer_kdamp,
+    def __init__(self, drive_controller, base_speed, max_omega, kp_low, kp_high,
              gyro_kp, gyro_kd, gyro_max_speed, turn_angle):
 
         self.drive = drive_controller
@@ -56,11 +55,10 @@ class LineFollower:
         self.special_action_counter = 0
         #==========================================
         self.BASE_SPEED_MM_S = base_speed
-        self.BASE_KEEP_SPEED_MM_S = base_keep_speed
         self.MAX_STEER_OMEGA = max_omega
         self.STEERING_KP_BASE = kp_low
         self.STEERING_KP_HIGH = kp_high
-        self.STEERING_KDAMP = steer_kdamp
+        
         self.GYRO_KP = gyro_kp
         self.GYRO_KD = gyro_kd
         self.MAX_TURN_SPEED = gyro_max_speed
@@ -104,8 +102,7 @@ class LineFollower:
         if abs_error > self.ERROR_THRESHOLD:
             steering_kp = self.STEERING_KP_HIGH
 
-        damping_term = self.STEERING_KDAMP * self.turn_rate
-        steering_omega = (steering_kp * (-error)) - damping_term
+        steering_omega = steering_kp * error
 
         if steering_omega > self.MAX_STEER_OMEGA:
             steering_omega = self.MAX_STEER_OMEGA
@@ -180,8 +177,10 @@ class LineFollower:
 
         angle_error = self.target_angle - self.robot_angle
         
+        # 检查是否接近目标角度 (停止条件)
         if abs(angle_error) < self.ANGLE_TOLERANCE:
             self.is_turning = False
+            # 停止电机，因为我们不再需要 PID/PD 控制
             self.drive.motors_off() 
             return False # 转弯完成
 
@@ -194,7 +193,14 @@ class LineFollower:
         elif turn_speed < -self.MAX_TURN_SPEED:
             turn_speed = -self.MAX_TURN_SPEED
             
+        # 应用电机速度 (注意：这里需要调用 RobotDrive 底层 set_speeds 来精确控制左右轮)
+        # 假设你的 RobotDrive 内部有一个 motors 对象 (robot.Motors)
         self.drive.controller.motors.set_speeds(int(-turn_speed), int(turn_speed))
+        
+        # 注意：这里我们依赖主循环中对 robot_drive.update() 的调用来执行速度闭环。
+        # 如果你的 motors.set_speeds 是直接的 PWM 设置，则不需要 robot_drive.update()，
+        # 但如果 motors.set_speeds 是目标速度，则需要。
+        # 鉴于示例代码直接控制 motors，我们在这里依赖它立即生效。
         
         return True # 转弯进行中
 # ==========================================
@@ -229,6 +235,7 @@ class LineFollower:
     SPECIAL_TURN_W = 4.0  # 特殊情况的左转角速度
 
     def lane_keep(self):
+        # 1. 如果正在执行陀螺仪转弯，直接跳过所有循线逻辑
         if self.is_turning:
             # 返回 0, 0 让主循环知道当前正在执行特殊动作
             return 0.0, 0.0
@@ -244,18 +251,16 @@ class LineFollower:
             self.start_gyro_turn(self.SPECIAL_TURN_ANGLE) 
             return 0.0, 0.0
         
-        if self._is_any_sensor_high(threshold=700):
-                    self.drive.set_speed(v=0.0, w=0.0) # 停止运动
-                    self.drive.motors_off()            # 彻底关闭电机
-                    # 你可能需要在这里切换到 MODE_STOP 状态，但由于 lane_keep 不能直接修改模式，
-                    # 必须在主循环中实现状态切换。
-                    return 0.0, 0.0
+        if self._is_on_green_marker():
+            self.drive.set_speed(v=0.0, w=self.FIXED_TURN_W)
+            return 0.0, self.FIXED_TURN_W
 
         error = self._calculate_error()
 
         abs_error = abs(error)
         steering_kp = self.STEERING_KP_BASE
 
+        # 使用分段 KP
         if abs_error > self.ERROR_THRESHOLD:
             steering_kp = self.STEERING_KP_HIGH
             
@@ -272,7 +277,19 @@ class LineFollower:
 
 # ===================终点检测=========================
 
-    def _is_any_sensor_high(self, threshold=700):
-            """检查是否有任何传感器读数高于阈值（例如黑色）。"""
-            readings = self.line_sensors.read_calibrated()
-            return any(r > threshold for r in readings)
+    def _is_on_green_marker(self):
+        readings = self.line_sensors.read_calibrated()
+
+        GREEN_MIN_THRESHOLD = 300
+        GREEN_MAX_THRESHOLD = 700
+
+
+        middle_readings = [readings[0], readings[1],
+                           readings[2], readings[3], readings[4]]
+
+
+        for r in middle_readings:
+            if not (GREEN_MIN_THRESHOLD <= r <= GREEN_MAX_THRESHOLD):
+                return False  
+
+        return True
