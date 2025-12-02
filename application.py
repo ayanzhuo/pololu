@@ -31,6 +31,8 @@ class LineFollower:
         self.drive = drive_controller
         self.line_sensors = robot.LineSensors()
         self.sensor_count = len(self.line_sensors.read_calibrated())
+        self.bump_sensors = robot.BumpSensors()
+        self.bump_sensors.calibrate()
 
     def _calculate_error(self):
 
@@ -50,7 +52,16 @@ class LineFollower:
         error = weighted_sum / total_value
 
         return error
+    def wait_for_collision_release(self):
+        self.bump_sensors.read() 
+        is_pressed = self.bump_sensors.left_is_pressed() or self.bump_sensors.right_is_pressed()
+        while is_pressed:
+            self.bump_sensors.read() 
+            is_pressed = self.bump_sensors.left_is_pressed() or self.bump_sensors.right_is_pressed()
+            time.sleep_ms(10) 
 
+        time.sleep_ms(20) 
+        
     def follow_line(self):
 
         error = self._calculate_error()

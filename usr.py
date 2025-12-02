@@ -5,16 +5,21 @@ from pololu_3pi_2040_robot import robot
 
 from bsp import RobotDrive, RobotDisplay, MusicPlayer
 from application import LineFollower
-
+DEBUG = True
 # ==========================================
 # --- 硬件和常量初始化 ---
 # ==========================================
-bump_sensors = robot.BumpSensors()
 button_a = robot.ButtonA()
 button_b = robot.ButtonB()
 buzzer = robot.Buzzer()
-led = robot.YellowLED()
 
+rgb_leds = robot.RGBLEDs()
+if not DEBUG:
+    rgb_leds.set_brightness(8) 
+    for i in range(6):
+
+        rgb_leds.set(i, [0, 129, 226])
+    rgb_leds.show()
 
 # --- 状态机 ---
 MODE_WAIT_CALIB = 0
@@ -24,6 +29,7 @@ MODE_STOP = 3
 MODE_LANE_KEEP = 4
 mode_lock = _thread.allocate_lock()
 current_mode_ref = [MODE_WAIT_CALIB]
+
 
 # --- 实例化控制系统 ---
 robot_drive = RobotDrive()
@@ -41,12 +47,14 @@ time.sleep_ms(200)
 try:
     while True:
         robot_drive.update()
-        bump_sensors.read()
-        t = time.ticks_ms()
+        line_follower.bump_sensors.read()
+
+        collision_detected = line_follower.bump_sensors.left_is_pressed(
+        ) or line_follower.bump_sensors.right_is_pressed()
 
         with mode_lock:
             current_mode = current_mode_ref[0]
-
+#======================等待校准模式=====================
         if current_mode == MODE_WAIT_CALIB:
             robot_drive.set_speed(v=0, w=0)
             display_manager.set_custom_message("Press A to CALIB")
@@ -54,13 +62,18 @@ try:
                 with mode_lock:
                     current_mode_ref[0] = MODE_CALIBRATING
                 time.sleep_ms(200)
-
+            if not DEBUG:
+                if collision_detected:
+                    with mode_lock:
+                        current_mode_ref[0] = MODE_CALIBRATING
+                    line_follower.wait_for_collision_release()
+#========================校准模式============================
         elif current_mode == MODE_CALIBRATING:
             display_manager.set_custom_message("CALIBRATING...")
             line_follower.calibrate_motorsweep()
             with mode_lock:
                 current_mode_ref[0] = MODE_STOP
-
+#=========================循迹模式=============================
         elif current_mode == MODE_FOLLOW:
             display_manager.set_custom_message("Following Line")
             line_follower.follow_line()
@@ -69,7 +82,12 @@ try:
                 with mode_lock:
                     current_mode_ref[0] = MODE_LANE_KEEP
                     time.sleep_ms(200)
-
+            if not DEBUG:
+                if collision_detected:
+                    with mode_lock:
+                        current_mode_ref[0] = MODE_LANE_KEEP
+                    line_follower.wait_for_collision_release()
+#==========================保持模式================================          
         elif current_mode == MODE_LANE_KEEP:
             display_manager.set_custom_message("Lane Keep")
             line_follower.lane_keep()
@@ -77,7 +95,12 @@ try:
                 with mode_lock:
                     current_mode_ref[0] = MODE_STOP
                     time.sleep_ms(200)
-
+            if not DEBUG:
+                if collision_detected:
+                    with mode_lock:
+                        current_mode_ref[0] = MODE_STOP
+                    line_follower.wait_for_collision_release()
+#=============================停车模式=============================
         elif current_mode == MODE_STOP:
             display_manager.set_custom_message("Ready to Go!")
             robot_drive.set_speed(v=0, w=0)
@@ -85,6 +108,12 @@ try:
                 with mode_lock:
                     current_mode_ref[0] = MODE_FOLLOW
                 time.sleep_ms(200)
+            if not DEBUG:
+                if collision_detected:
+                    with mode_lock:
+                        current_mode_ref[0] = MODE_FOLLOW
+                    line_follower.wait_for_collision_release()
+                    
         music_player.music_step()
         time.sleep_ms(2)
 
