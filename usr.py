@@ -13,6 +13,7 @@ button_a = robot.ButtonA()
 button_b = robot.ButtonB()
 buzzer = robot.Buzzer()
 
+
 rgb_leds = robot.RGBLEDs()
 if not DEBUG:
     rgb_leds.set_brightness(8) 
@@ -27,6 +28,7 @@ MODE_CALIBRATING = 1
 MODE_FOLLOW = 2
 MODE_STOP = 3
 MODE_LANE_KEEP = 4
+MODE_RECOVERY_TURN = 5
 mode_lock = _thread.allocate_lock()
 current_mode_ref = [MODE_WAIT_CALIB]
 
@@ -79,12 +81,12 @@ try:
 
             if button_a.check():
                 with mode_lock:
-                    current_mode_ref[0] = MODE_LANE_KEEP
+                    current_mode_ref[0] = MODE_RECOVERY_TURN
                     time.sleep_ms(200)
             # if not DEBUG:
             if collision_detected:
                 with mode_lock:
-                    current_mode_ref[0] = MODE_LANE_KEEP
+                    current_mode_ref[0] = MODE_RECOVERY_TURN
                 line_follower.wait_for_collision_release()
 #==========================保持模式================================          
         elif current_mode == MODE_LANE_KEEP:
@@ -99,6 +101,20 @@ try:
                     with mode_lock:
                         current_mode_ref[0] = MODE_STOP
                     line_follower.wait_for_collision_release()
+#==========================过渡模式==============================
+        elif current_mode == MODE_RECOVERY_TURN:
+            display_manager.set_custom_message("RECOVERY TURN >")
+            robot_drive.set_speed(v=400, w=20) 
+            
+            # 2. 执行阻塞式转弯计时
+            start_time = time.ticks_ms()
+            while time.ticks_diff(time.ticks_ms(), start_time) < 250:
+                # 必须持续更新底层的 PID 速度控制
+                robot_drive.update() 
+                time.sleep_ms(10) # 维持高频控制
+
+            with mode_lock:
+                current_mode_ref[0] = MODE_LANE_KEEP # 转弯完成，进入 LANE_KEEP
 #=============================停车模式=============================
         elif current_mode == MODE_STOP:
             display_manager.set_custom_message("Ready to Go!")

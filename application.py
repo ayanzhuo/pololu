@@ -11,18 +11,18 @@ class LineFollower:
     """
 
     # --- 循迹常量 ---
-    BASE_SPEED_MM_S = 550.0   # 基础前进速度 (v)
+    BASE_SPEED_MM_S = 480.0   # 基础前进速度 (v)
     LANE_SPEED_MM_S = 350.0
-    MAX_STEER_OMEGA = 25.0     # 最大转向角速度 (w, rad/s)
+    MAX_STEER_OMEGA = 20.0     # 最大转向角速度 (w, rad/s)
 
     #  校准扫动参数
     CAL_SWEEP_V = 0.0       # 前进基础速度 (mm/s)
-    CAL_SWEEP_W = 6.0        # 快速转动角速度 (rad/s)
+    CAL_SWEEP_W = 8.0        # 快速转动角速度 (rad/s)
     CAL_SWEEP_DURATION = 350  # 扫描持续时间 (毫秒)
     CAL_LOOP_DELAY = 20       # 校准循环延迟 (毫秒)
     #  控制参数
     STEERING_KP_BASE = 0.008
-    STEERING_KP_HIGH = 0.025
+    STEERING_KP_HIGH = 0.024
 
     ERROR_THRESHOLD = 1000
     SENSOR_WEIGHTS = [-2000, -1000, 0, 1000, 2000]
