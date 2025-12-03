@@ -11,7 +11,8 @@ class LineFollower:
     """
 
     # --- 循迹常量 ---
-    BASE_SPEED_MM_S = 450.0   # 基础前进速度 (v)
+    BASE_SPEED_MM_S = 550.0   # 基础前进速度 (v)
+    LANE_SPEED_MM_S = 350.0
     MAX_STEER_OMEGA = 25.0     # 最大转向角速度 (w, rad/s)
 
     #  校准扫动参数
@@ -194,7 +195,7 @@ class LineFollower:
         elif steering_omega < -self.MAX_STEER_OMEGA:
             steering_omega = -self.MAX_STEER_OMEGA
 
-        self.drive.set_speed(v=self.BASE_SPEED_MM_S, w=steering_omega)
+        self.drive.set_speed(v=self.LANE_SPEED_MM_S, w=steering_omega)
 
         return error, steering_omega
 

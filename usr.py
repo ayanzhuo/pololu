@@ -37,7 +37,6 @@ line_follower = LineFollower(robot_drive)
 display_manager = RobotDisplay(robot_drive)
 # ===================== 传感器校准 =====================#
 
-bump_sensors.calibrate()
 music_player = MusicPlayer(buzzer, mode_lock, current_mode_ref)
 _thread.start_new_thread(display_manager.run, ())
 time.sleep_ms(200)
@@ -82,11 +81,11 @@ try:
                 with mode_lock:
                     current_mode_ref[0] = MODE_LANE_KEEP
                     time.sleep_ms(200)
-            if not DEBUG:
-                if collision_detected:
-                    with mode_lock:
-                        current_mode_ref[0] = MODE_LANE_KEEP
-                    line_follower.wait_for_collision_release()
+            # if not DEBUG:
+            if collision_detected:
+                with mode_lock:
+                    current_mode_ref[0] = MODE_LANE_KEEP
+                line_follower.wait_for_collision_release()
 #==========================保持模式================================          
         elif current_mode == MODE_LANE_KEEP:
             display_manager.set_custom_message("Lane Keep")
@@ -113,8 +112,8 @@ try:
                     with mode_lock:
                         current_mode_ref[0] = MODE_FOLLOW
                     line_follower.wait_for_collision_release()
-                    
-        music_player.music_step()
+        if not DEBUG:            
+            music_player.music_step()
         time.sleep_ms(2)
 
 except KeyboardInterrupt:
